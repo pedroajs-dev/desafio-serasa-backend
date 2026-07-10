@@ -33,7 +33,7 @@ class ScaleControllerTest {
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.id").value("BAL-100"))
                 .andExpect(jsonPath("$.branchId").value(1))
-                .andExpect(jsonPath("$.apiKey").value("key-100"));
+                .andExpect(jsonPath("$.apiKey").doesNotExist());
     }
 
     @Test
