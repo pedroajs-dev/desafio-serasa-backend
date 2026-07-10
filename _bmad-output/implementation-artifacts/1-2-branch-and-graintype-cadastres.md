@@ -1,6 +1,10 @@
+---
+baseline_commit: c107d8682a78a32329d5c28f80f15ffd0fe93d04
+---
+
 # Story 1.2: Branch & GrainType Cadastres
 
-Status: ready-for-dev
+Status: done
 
 ## Story
 
@@ -16,18 +20,18 @@ so that trucks and transactions can reference valid locations and commodities.
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Create `Branch` entity + repository + REST controller (AC: #1, #2)
-  - [ ] `Branch` JPA entity: `id` (Long, auto-generated), `name` (String, not null), `location` (String)
-  - [ ] `BranchRepository extends JpaRepository<Branch, Long>`
-  - [ ] `BranchController`: `POST /api/branches` (201 + body), `GET /api/branches` (200 + list)
-  - [ ] Bean Validation on request DTO (`@NotBlank name`)
-- [ ] Task 2: Create `GrainType` entity + repository + REST controller (AC: #1, #2, #3)
-  - [ ] `GrainType` JPA entity: `id` (Long), `name` (String, not null), `purchasePricePerTon` (BigDecimal or double, not null, positive), `maxReferenceStock` (double, not null), `currentStock` (double, defaults to 0 or provided)
-  - [ ] `GrainTypeRepository extends JpaRepository<GrainType, Long>`
-  - [ ] `GrainTypeController`: `POST /api/grain-types` (201 + body), `GET /api/grain-types` (200 + list)
-- [ ] Task 3: Add seed data in `data.sql` (AC: #2)
-  - [ ] Create `src/main/resources/data.sql` (auto-executed by Spring Boot against H2 on `ddl-auto: update`)
-  - [ ] Seed at least 2 branches and 3 grain types with realistic values (varying `purchasePricePerTon`, `maxReferenceStock`, `currentStock` so Epic 4 margin calculations have meaningful test data across the 5%–20% range)
+- [x] Task 1: Create `Branch` entity + repository + REST controller (AC: #1, #2)
+  - [x] `Branch` JPA entity: `id` (Long, auto-generated), `name` (String, not null), `location` (String)
+  - [x] `BranchRepository extends JpaRepository<Branch, Long>`
+  - [x] `BranchController`: `POST /api/branches` (201 + body), `GET /api/branches` (200 + list)
+  - [x] Bean Validation on request DTO (`@NotBlank name`)
+- [x] Task 2: Create `GrainType` entity + repository + REST controller (AC: #1, #2, #3)
+  - [x] `GrainType` JPA entity: `id` (Long), `name` (String, not null), `purchasePricePerTon` (BigDecimal or double, not null, positive), `maxReferenceStock` (double, not null), `currentStock` (double, defaults to 0 or provided)
+  - [x] `GrainTypeRepository extends JpaRepository<GrainType, Long>`
+  - [x] `GrainTypeController`: `POST /api/grain-types` (201 + body), `GET /api/grain-types` (200 + list)
+- [x] Task 3: Add seed data in `data.sql` (AC: #2)
+  - [x] Create `src/main/resources/data.sql` (auto-executed by Spring Boot against H2 on `ddl-auto: update`)
+  - [x] Seed at least 2 branches and 3 grain types with realistic values (varying `purchasePricePerTon`, `maxReferenceStock`, `currentStock` so Epic 4 margin calculations have meaningful test data across the 5%–20% range)
 
 ## Dev Notes
 
@@ -54,8 +58,40 @@ so that trucks and transactions can reference valid locations and commodities.
 
 ### Agent Model Used
 
+Claude Sonnet 5 (claude-sonnet-5)
+
 ### Debug Log References
+
+- `./mvnw -q test` initially failed with 7 errors: `data.sql` ran before Hibernate created the schema ("Table BRANCH not found") — fixed by adding `spring.jpa.defer-datasource-initialization: true`.
+- After that fix, tests failed again with primary-key violations: all `@SpringBootTest` contexts shared the same named in-memory H2 DB (`jdbc:h2:mem:balancas;DB_CLOSE_DELAY=-1`), so `data.sql` executed once per context against the same persisted data — fixed by adding `src/test/resources/application.yml` overriding the datasource URL to `jdbc:h2:mem:balancas-test-${random.uuid}` (full config duplicated since Spring does not merge classpath `application.yml` files, it replaces).
+- A further PK violation surfaced on `POST` in tests: `data.sql` used explicit `id` values (1, 2, 3...) which the `IDENTITY` generator wasn't aware of, so the first generated id collided with a seeded row — fixed by dropping explicit ids from `data.sql` and letting `IDENTITY` assign them.
+- `./mvnw -q test` — final run: 7/7 tests passed, exit code 0.
 
 ### Completion Notes List
 
+- Implemented `Branch` and `GrainType` JPA entities, Spring Data repositories, and REST controllers under `com.serasa.balancas.branch` / `com.serasa.balancas.graintype`, following the flat entity/repository/controller package style. Controllers return the entity directly (no separate DTO) per Dev Notes guidance for this story's scope.
+- `GrainType.purchasePricePerTon` uses `BigDecimal` per Dev Notes (Epic 4 margin calc precision); `maxReferenceStock`/`currentStock` use `Double`.
+- Seed data added in `src/main/resources/data.sql`: 2 branches, 3 grain types (Soja/Milho/Sorgo) with varied price/stock ratios spanning the 5%-20% scarcity range for later Epic 4/5 use.
+- `spring.jpa.defer-datasource-initialization: true` added to `application.yml` so `data.sql` runs after Hibernate's `ddl-auto: update` creates the schema.
+- Added `src/test/resources/application.yml` giving each `@SpringBootTest` context an isolated, randomly-named in-memory H2 DB, avoiding cross-context data collisions with the shared named `balancas` DB used at runtime.
+- Tests: `BranchControllerTest` and `GrainTypeControllerTest` (create success, validation-failure 400, list-includes-seed-data) — 7 tests total, all passing.
+- Code review finding fixed: both controllers accepted the raw entity on `POST`, so a client-supplied `id` caused `save()` to merge/overwrite an existing row instead of inserting. Fixed by nulling the `id` before `save()` in both `BranchController.create` and `GrainTypeController.create`; added a regression test per controller (`ignoresClientSuppliedIdOnCreate`). 9 tests total, all passing.
+
 ### File List
+
+- `src/main/java/com/serasa/balancas/branch/Branch.java` (new)
+- `src/main/java/com/serasa/balancas/branch/BranchRepository.java` (new)
+- `src/main/java/com/serasa/balancas/branch/BranchController.java` (new)
+- `src/main/java/com/serasa/balancas/graintype/GrainType.java` (new)
+- `src/main/java/com/serasa/balancas/graintype/GrainTypeRepository.java` (new)
+- `src/main/java/com/serasa/balancas/graintype/GrainTypeController.java` (new)
+- `src/main/resources/data.sql` (new)
+- `src/main/resources/application.yml` (modified — added `defer-datasource-initialization: true`)
+- `src/test/resources/application.yml` (new)
+- `src/test/java/com/serasa/balancas/branch/BranchControllerTest.java` (new)
+- `src/test/java/com/serasa/balancas/graintype/GrainTypeControllerTest.java` (new)
+
+## Change Log
+
+- 2026-07-10: Story implemented — Branch and GrainType cadastres with entity/repository/controller, seed data, and tests. All 7 tests passing. Status set to `review`.
+- 2026-07-10: Code review found id-spoofing risk in both POST endpoints (client-supplied `id` causes overwrite instead of insert). Fixed and covered by regression tests. 9 tests passing. Approved and marked `done`.
