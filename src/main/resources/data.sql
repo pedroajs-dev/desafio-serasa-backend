@@ -8,3 +8,6 @@ INSERT INTO grain_type (name, purchase_price_per_ton, max_reference_stock, curre
 INSERT INTO truck (license_plate, tare) VALUES ('ABC1D23', 8500.0);
 INSERT INTO truck (license_plate, tare) VALUES ('XYZ9E87', 9200.0);
 INSERT INTO truck (license_plate, tare) VALUES ('JKL4F56', 7800.0);
+
+INSERT INTO scale (id, branch_id, api_key) VALUES ('BAL-001', 1, 'key-sorriso-001');
+INSERT INTO scale (id, branch_id, api_key) VALUES ('BAL-002', 2, 'key-rondonopolis-002');

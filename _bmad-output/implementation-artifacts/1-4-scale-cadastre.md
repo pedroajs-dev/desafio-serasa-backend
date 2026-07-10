@@ -1,6 +1,10 @@
+---
+baseline_commit: d34e77d
+---
+
 # Story 1.4: Scale Cadastre
 
-Status: ready-for-dev
+Status: done
 
 ## Story
 
@@ -16,13 +20,13 @@ so that incoming readings can be authenticated and associated to a branch.
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Create `Scale` entity + repository + REST controller (AC: #1, #2, #3)
-  - [ ] `Scale` JPA entity: `id` (String, business identifier — see Dev Notes), `branch` (`@ManyToOne` to `Branch`, not null), `apiKey` (String, not null)
-  - [ ] `ScaleRepository extends JpaRepository<Scale, String>`
-  - [ ] `ScaleController`: `POST /api/scales` (201 + body, validate `branchId` exists → 400/404 if not), `GET /api/scales` (200 + list including `branchId`)
-  - [ ] Bean Validation on request DTO (`@NotNull branchId`, `@NotBlank apiKey`)
-- [ ] Task 2: Add seed data (AC: #1, #2)
-  - [ ] Append to `data.sql`: at least 2 scales linked to seeded branches (from Story 1.2), each with a distinct `apiKey` value — **note these apiKey values explicitly in this story's Completion Notes**, since Epic 2 (ingestion endpoint) and Epic 6 (ESP32 simulator) will need real seeded values to authenticate against.
+- [x] Task 1: Create `Scale` entity + repository + REST controller (AC: #1, #2, #3)
+  - [x] `Scale` JPA entity: `id` (String, business identifier — see Dev Notes), `branch` (`@ManyToOne` to `Branch`, not null), `apiKey` (String, not null)
+  - [x] `ScaleRepository extends JpaRepository<Scale, String>`
+  - [x] `ScaleController`: `POST /api/scales` (201 + body, validate `branchId` exists → 400/404 if not), `GET /api/scales` (200 + list including `branchId`)
+  - [x] Bean Validation on request DTO (`@NotNull branchId`, `@NotBlank apiKey`)
+- [x] Task 2: Add seed data (AC: #1, #2)
+  - [x] Append to `data.sql`: at least 2 scales linked to seeded branches (from Story 1.2), each with a distinct `apiKey` value — **note these apiKey values explicitly in this story's Completion Notes**, since Epic 2 (ingestion endpoint) and Epic 6 (ESP32 simulator) will need real seeded values to authenticate against.
 
 ## Dev Notes
 
@@ -51,8 +55,34 @@ so that incoming readings can be authenticated and associated to a branch.
 
 ### Agent Model Used
 
+Claude Sonnet 5
+
 ### Debug Log References
+
+Full regression suite run via `./mvnw test` — all tests pass (BranchControllerTest, GrainTypeControllerTest, TruckControllerTest, ScaleControllerTest, BalancasApplicationTests), no failures.
 
 ### Completion Notes List
 
+- `Scale.id` implemented as `String @Id` (no `@GeneratedValue`), matching the business identifier used in the ingestion payload (e.g. `"BAL-001"`), per Dev Notes — required for Epic 2's `ScaleAuthService` lookup and Epic 3's `ConcurrentHashMap<String, ScaleState>` key.
+- `POST /api/scales` validates `branchId` against `BranchRepository`; a missing branch throws `ResourceNotFoundException` (404), reusing the exception hierarchy introduced ahead of this story.
+- `apiKey` stored in plaintext — accepted trade-off per AC #3, flagged with an inline code comment; README note is deferred to Epic 7 (not yet created).
+- Request/response shaped via `ScaleRequest`/`ScaleResponse` records (not the entity directly) so the API surfaces `branchId` instead of a nested `Branch` object.
+- **Seeded scale `apiKey` values for Epic 2/Epic 6 use** (in `data.sql`):
+  - `BAL-001` → branch id 1 (Filial Sorriso) → apiKey `key-sorriso-001`
+  - `BAL-002` → branch id 2 (Filial Rondonopolis) → apiKey `key-rondonopolis-002`
+
 ### File List
+
+- src/main/java/com/serasa/balancas/scale/Scale.java (new)
+- src/main/java/com/serasa/balancas/scale/ScaleRepository.java (new)
+- src/main/java/com/serasa/balancas/scale/ScaleRequest.java (new)
+- src/main/java/com/serasa/balancas/scale/ScaleResponse.java (new)
+- src/main/java/com/serasa/balancas/scale/ScaleController.java (new)
+- src/main/resources/data.sql (modified)
+- src/test/java/com/serasa/balancas/scale/ScaleControllerTest.java (new)
+- src/main/java/com/serasa/balancas/common/exception/GlobalExceptionHandler.java (modified — added MethodArgumentNotValidException handler)
+
+## Change Log
+
+- 2026-07-10: Implemented Scale cadastre (entity, repository, controller, DTOs, seed data, tests). Status set to review.
+- 2026-07-10: Fixed `GlobalExceptionHandler` to catch `MethodArgumentNotValidException` and return the standard `ErrorResponse` shape instead of Spring's default Whitelabel body — found via manual testing of `POST /api/scales`, benefits all controllers retroactively. Manually verified: missing `id` → 400 `ErrorResponse`; valid payload → 201; nonexistent `branchId` → 404 `ErrorResponse`. Status set to done.
