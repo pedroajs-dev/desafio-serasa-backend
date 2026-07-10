@@ -1,0 +1,97 @@
+package com.serasa.balancas.weighingrecord;
+
+import com.serasa.balancas.scale.Scale;
+import com.serasa.balancas.scale.ScaleRepository;
+import com.serasa.balancas.stabilization.StabilizationResult;
+import com.serasa.balancas.stabilization.WeighingPersistencePort;
+import com.serasa.balancas.transporttransaction.TransactionStatus;
+import com.serasa.balancas.transporttransaction.TransportTransaction;
+import com.serasa.balancas.transporttransaction.TransportTransactionRepository;
+import java.time.LocalDateTime;
+import java.util.Optional;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+@Service
+public class WeighingPersistenceService implements WeighingPersistencePort {
+
+    private static final Logger log = LoggerFactory.getLogger(WeighingPersistenceService.class);
+
+    private final TransportTransactionRepository transportTransactionRepository;
+    private final WeighingRecordRepository weighingRecordRepository;
+    private final ScaleRepository scaleRepository;
+
+    public WeighingPersistenceService(TransportTransactionRepository transportTransactionRepository,
+            WeighingRecordRepository weighingRecordRepository, ScaleRepository scaleRepository) {
+        this.transportTransactionRepository = transportTransactionRepository;
+        this.weighingRecordRepository = weighingRecordRepository;
+        this.scaleRepository = scaleRepository;
+    }
+
+    @Override
+    @Transactional
+    public void persist(StabilizationResult result) {
+        TransportTransaction transaction = transportTransactionRepository
+                .findByTruck_LicensePlateAndStatusNot(result.plate(), TransactionStatus.COMPLETED);
+
+        if (transaction == null) {
+            log.warn("No open transaction found for plate={} (scaleId={}) — dropping stabilized reading of {}kg",
+                    result.plate(), result.scaleId(), result.stabilizedWeightKg());
+            return;
+        }
+
+        Optional<Scale> scale = scaleRepository.findById(result.scaleId());
+        if (scale.isEmpty()) {
+            log.warn("No Scale found for scaleId={} — dropping stabilized reading for plate={}",
+                    result.scaleId(), result.plate());
+            return;
+        }
+
+        Double tareValue = transaction.getTruck().getTare();
+        if (tareValue == null) {
+            log.warn("Null tare for truck plate={} (scaleId={}) — dropping stabilized reading",
+                    result.plate(), result.scaleId());
+            return;
+        }
+
+        if (transaction.getGrainType().getPurchasePricePerTon() == null) {
+            log.warn("Null purchasePricePerTon for grainType={} (plate={}, scaleId={}) — dropping stabilized reading",
+                    transaction.getGrainType().getId(), result.plate(), result.scaleId());
+            return;
+        }
+
+        double grossWeightKg = result.stabilizedWeightKg();
+        double tare = tareValue;
+        double netWeightKg = grossWeightKg - tare;
+
+        if (netWeightKg <= 0) {
+            log.warn("Non-positive netWeightKg for plate={} (scaleId={}): grossWeightKg={}, tare={}, "
+                            + "netWeightKg={} — dropping stabilized reading",
+                    result.plate(), result.scaleId(), grossWeightKg, tare, netWeightKg);
+            return;
+        }
+
+        double loadCost = (netWeightKg / 1000.0) * transaction.getGrainType().getPurchasePricePerTon().doubleValue();
+
+        WeighingRecord record = new WeighingRecord(
+                transaction.getTruck(),
+                scale.get(),
+                transaction.getGrainType(),
+                transaction,
+                grossWeightKg,
+                tare,
+                netWeightKg,
+                loadCost,
+                LocalDateTime.now());
+        weighingRecordRepository.save(record);
+
+        transaction.setGrossWeightKg(grossWeightKg);
+        transaction.setNetWeightKg(netWeightKg);
+        transaction.setLoadCost(loadCost);
+        transaction.setStatus(TransactionStatus.COMPLETED);
+        transaction.setEndDate(LocalDateTime.now());
+        transportTransactionRepository.save(transaction);
+    }
+}

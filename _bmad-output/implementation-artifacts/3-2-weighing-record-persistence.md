@@ -1,6 +1,6 @@
 # Story 3.2: Weighing Record Persistence
 
-Status: ready-for-dev
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -18,26 +18,29 @@ so that the weighing data is durable and the transaction lifecycle is complete.
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Create `WeighingRecord` entity + repository (AC: #1)
-  - [ ] `WeighingRecord` entity: `id` (Long, IDENTITY), `truck` (`@ManyToOne Truck`), `scale` (`@ManyToOne Scale`), `grainType` (`@ManyToOne GrainType`), `transportTransaction` (`@ManyToOne TransportTransaction`), `grossWeightKg` (Double), `tare` (Double), `netWeightKg` (Double), `loadCost` (Double), `dateTime` (LocalDateTime)
-  - [ ] `WeighingRecordRepository extends JpaRepository<WeighingRecord, Long>` — no custom queries needed yet (Epic 5 will add report queries later)
-- [ ] Task 2: Implement `WeighingPersistenceService implements WeighingPersistencePort` (AC: #1, #2, #3)
-  - [ ] Constructor-inject `TransportTransactionRepository`, `WeighingRecordRepository`, `ScaleRepository`
-  - [ ] `persist(StabilizationResult result)`:
-    - [ ] Look up the open transaction via `transportTransactionRepository.findByTruck_LicensePlateAndStatusNot(result.plate(), TransactionStatus.COMPLETED)`
-    - [ ] If `null` → log a warning (`scaleId`, `plate`) and return without throwing or persisting (AC #3)
-    - [ ] If found → compute `netWeightKg = result.stabilizedWeightKg() - transaction.getTruck().getTare()`
-    - [ ] Compute `loadCost = (netWeightKg / 1000.0) * transaction.getGrainType().getPurchasePricePerTon().doubleValue()` (FR16a)
-    - [ ] Look up `Scale` by `result.scaleId()` via `ScaleRepository.findById(...)` (should always exist — the reading was authenticated against it upstream; if somehow absent, treat like AC #3: log and skip rather than throw, since this is a fire-and-forget internal event, not an HTTP request)
-    - [ ] Build and save `WeighingRecord` (truck, scale, grainType, transportTransaction, grossWeightKg = result.stabilizedWeightKg(), tare = transaction.getTruck().getTare(), netWeightKg, loadCost, dateTime = now)
-    - [ ] Set `transaction.setGrossWeightKg(...)`, `setNetWeightKg(...)`, `setLoadCost(...)` on the `TransportTransaction` itself too (see Dev Notes — these fields already exist on the entity and are otherwise never populated)
-    - [ ] Set `transaction.setStatus(TransactionStatus.COMPLETED)`, `transaction.setEndDate(LocalDateTime.now())`, save
-- [ ] Task 3: Wire `WeighingPersistenceService` as the `@Service` implementation of `WeighingPersistencePort` (AC: #1)
-  - [ ] No controller/listener exists yet to call `StabilizationService.process(...).ifPresent(port::persist)` (Epic 2 not built) — this story stops at making the port callable and tested in isolation; Epic 2 will wire the actual call site
-- [ ] Task 4: Tests (AC: #1, #2, #3)
-  - [ ] `WeighingPersistenceServiceTest` — `@SpringBootTest` (or `@DataJpaTest` + manual service construction) exercising the real H2 DB, matching the existing `*ControllerTest` integration-style convention (see Dev Notes)
-  - [ ] Case: open transaction exists → `WeighingRecord` saved with correct grossWeightKg/tare/netWeightKg/loadCost/scaleId/grainTypeId; `TransportTransaction` becomes `COMPLETED` with `endDate` set and its own gross/net/loadCost fields populated
-  - [ ] Case: no open transaction for the plate → no `WeighingRecord` persisted, no exception propagates, `WeighingRecordRepository.count()` unchanged
+- [x] Task 1: Create `WeighingRecord` entity + repository (AC: #1)
+  - [x] `WeighingRecord` entity: `id` (Long, IDENTITY), `truck` (`@ManyToOne Truck`), `scale` (`@ManyToOne Scale`), `grainType` (`@ManyToOne GrainType`), `transportTransaction` (`@ManyToOne TransportTransaction`), `grossWeightKg` (Double), `tare` (Double), `netWeightKg` (Double), `loadCost` (Double), `dateTime` (LocalDateTime)
+  - [x] `WeighingRecordRepository extends JpaRepository<WeighingRecord, Long>` — no custom queries needed yet (Epic 5 will add report queries later)
+- [x] Task 2: Implement `WeighingPersistenceService implements WeighingPersistencePort` (AC: #1, #2, #3)
+  - [x] Constructor-inject `TransportTransactionRepository`, `WeighingRecordRepository`, `ScaleRepository`
+  - [x] `persist(StabilizationResult result)`:
+    - [x] Look up the open transaction via `transportTransactionRepository.findByTruck_LicensePlateAndStatusNot(result.plate(), TransactionStatus.COMPLETED)`
+    - [x] If `null` → log a warning (`scaleId`, `plate`) and return without throwing or persisting (AC #3)
+    - [x] If found → compute `netWeightKg = result.stabilizedWeightKg() - transaction.getTruck().getTare()`
+    - [x] Compute `loadCost = (netWeightKg / 1000.0) * transaction.getGrainType().getPurchasePricePerTon().doubleValue()` (FR16a)
+    - [x] Look up `Scale` by `result.scaleId()` via `ScaleRepository.findById(...)` (should always exist — the reading was authenticated against it upstream; if somehow absent, treat like AC #3: log and skip rather than throw, since this is a fire-and-forget internal event, not an HTTP request)
+    - [x] Build and save `WeighingRecord` (truck, scale, grainType, transportTransaction, grossWeightKg = result.stabilizedWeightKg(), tare = transaction.getTruck().getTare(), netWeightKg, loadCost, dateTime = now)
+    - [x] Set `transaction.setGrossWeightKg(...)`, `setNetWeightKg(...)`, `setLoadCost(...)` on the `TransportTransaction` itself too (see Dev Notes — these fields already exist on the entity and are otherwise never populated)
+    - [x] Set `transaction.setStatus(TransactionStatus.COMPLETED)`, `transaction.setEndDate(LocalDateTime.now())`, save
+- [x] Task 3: Wire `WeighingPersistenceService` as the `@Service` implementation of `WeighingPersistencePort` (AC: #1)
+  - [x] No controller/listener exists yet to call `StabilizationService.process(...).ifPresent(port::persist)` (Epic 2 not built) — this story stops at making the port callable and tested in isolation; Epic 2 will wire the actual call site
+- [x] Task 4: Tests (AC: #1, #2, #3)
+  - [x] `WeighingPersistenceServiceTest` — `@SpringBootTest` exercising the real H2 DB, matching the existing `*ControllerTest` integration-style convention (see Dev Notes)
+  - [x] Case: open transaction exists → `WeighingRecord` saved with correct grossWeightKg/tare/netWeightKg/loadCost/scaleId/grainTypeId; `TransportTransaction` becomes `COMPLETED` with `endDate` set and its own gross/net/loadCost fields populated
+  - [x] Case: no open transaction for the plate → no `WeighingRecord` persisted, no exception propagates, `WeighingRecordRepository.count()` unchanged
+- [x] Task 5: Guard against non-positive `netWeightKg` (added post-review, same log-and-skip pattern as AC #3)
+  - [x] If `netWeightKg <= 0` (e.g. bad tare/calibration causing `grossWeightKg < tare`) → log a warning (plate, scaleId, grossWeightKg, tare, netWeightKg) and return without persisting `WeighingRecord` or mutating `TransportTransaction`
+  - [x] Regression test: `tare` (8500) greater than stabilized `grossWeightKg` (5000) → no `WeighingRecord` persisted, `TransportTransaction` stays `IN_TRANSIT` with `endDate`/gross/net/loadCost still null
 
 ## Dev Notes
 
@@ -53,6 +56,8 @@ so that the weighing data is durable and the transaction lifecycle is complete.
 - **Graceful skip (AC #3) — no exception**: This is an internal event triggered by a background stabilization signal, not an HTTP request — there is no controller here to translate a `BusinessException`/`ResourceNotFoundException` into an HTTP error response (`GlobalExceptionHandler` pattern, `src/main/java/com/serasa/balancas/common/exception/`). Log via SLF4J (`LoggerFactory.getLogger(WeighingPersistenceService.class)`) at `warn` level and return — do not throw `BusinessException`/`ResourceNotFoundException` here, since nothing downstream would catch/render them.
 - **Testing convention** (see `src/test/java/com/serasa/balancas/transporttransaction/TransportTransactionControllerTest.java` and siblings): Epic 1 tests are `@SpringBootTest @AutoConfigureMockMvc` integration tests hitting the real H2 in-memory DB (not mocked repositories). Story 3.1's `StabilizationServiceTest` was a plain JUnit 5 unit test instead, because that service has zero DB dependency. This story's service *does* touch the DB (3 repositories), so follow the Epic 1 pattern: a Spring-context test seeding a `Branch`/`GrainType`/`Truck`/`Scale`/`TransportTransaction` via their repositories, then asserting on `WeighingRecordRepository` and the reloaded `TransportTransaction` state. Do not introduce Mockito mocking here unless the Spring-context approach proves awkward — match what's already established.
 - **Constructor injection, no Lombok, `@Service`** — mirror `StabilizationService`'s style (`src/main/java/com/serasa/balancas/stabilization/StabilizationService.java`): a plain constructor taking the three repositories, annotated `@Service`.
+- **Known edge case, accepted for this delivery**: AC #3's log-and-skip when no open transaction is found for the plate is a data-loss point (the stabilized reading is dropped, not queued or retried). Approved as-is for this delivery — do not build retry/audit logic now. Flag it in Epic 7's README "suggestions for expansion" section as a future improvement (e.g. an orphaned-reading audit table).
+- **`netWeightKg <= 0` guard** (added post-review): if `grossWeightKg < tare` (bad sensor calibration), the service logs a warning and skips persistence entirely — same pattern as the "no open transaction" and "no scale" cases. Confirmed as a deliberate guard, not left as silent negative-value persistence.
 - **Uncommitted state**: Story 3.1's files (`stabilization/` package + its test) are on disk but **not yet committed** to git (`git status` shows them as untracked/modified alongside this story's planning-artifact edits). Don't assume a clean baseline — if a commit workflow is invoked, it will need to include 3.1's files as part of the story-cycle commit, not just 3.2's.
 
 ### Project Structure Notes
@@ -85,3 +90,17 @@ so that the weighing data is durable and the transaction lifecycle is complete.
 ### Completion Notes List
 
 ### File List
+
+- `src/main/java/com/serasa/balancas/weighingrecord/WeighingRecord.java` (new)
+- `src/main/java/com/serasa/balancas/weighingrecord/WeighingRecordRepository.java` (new)
+- `src/main/java/com/serasa/balancas/weighingrecord/WeighingPersistenceService.java` (new)
+- `src/test/java/com/serasa/balancas/weighingrecord/WeighingPersistenceServiceTest.java` (new)
+
+### Review Findings
+
+- [x] [Review][Patch] `persist()` performed two `save()` calls with no `@Transactional` boundary — partial failure could leave `WeighingRecord` committed while `TransportTransaction` stayed open. Fixed: added `@Transactional` to `persist()`. [src/main/java/com/serasa/balancas/weighingrecord/WeighingPersistenceService.java]
+- [x] [Review][Patch] No null-guard before unboxing `grainType.getPurchasePricePerTon()` / `truck.getTare()` — an NPE would have violated the "never throws" contract of this fire-and-forget path. Fixed: added log-and-skip guards for both, matching the existing AC#3/Task 5 pattern. [src/main/java/com/serasa/balancas/weighingrecord/WeighingPersistenceService.java]
+- [x] [Review][Patch] No test exercised the "no Scale found" skip branch. Fixed: added `skipsGracefullyWhenNoScaleFoundForScaleId`. [src/test/java/com/serasa/balancas/weighingrecord/WeighingPersistenceServiceTest.java]
+- [x] [Review][Patch] No test exercised the exact `netWeightKg == 0` boundary. Fixed: added `skipsGracefullyWhenNetWeightIsExactlyZero`. [src/test/java/com/serasa/balancas/weighingrecord/WeighingPersistenceServiceTest.java]
+- [x] [Review][Patch] `epics.md` marked "Implement persistence call inside StabilizationService upon stability detection" as done, contradicting Task 3's own statement that the call site is not yet wired (Epic 2 pending). Fixed: unchecked the box and added a note pointing to Epic 2. [_bmad-output/planning-artifacts/epics.md]
+- [x] [Review][Defer] Concurrent stabilized readings for the same plate could in theory double-process the same open transaction (no locking). [src/main/java/com/serasa/balancas/weighingrecord/WeighingPersistenceService.java] — deferred, accepted risk: story 3.1's `ConcurrentHashMap.compute()` already serializes readings per `scaleId`, so triggering this would require two different scales processing the same plate concurrently — physically implausible (a truck can't be on two scales at once). No real call site exists yet (Epic 2 not built). Revisit once the ingestion endpoint (Epic 2) is wired.

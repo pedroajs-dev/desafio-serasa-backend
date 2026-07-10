@@ -235,11 +235,11 @@ So that the weighing data is durable and the transaction lifecycle is complete.
 **And** if no open transaction is found for that plate, the event is logged and skipped gracefully
 
 **Tasks:**
-- [ ] Create `WeighingRecord` entity + repository
-- [ ] Implement persistence call inside `StabilizationService` upon stability detection
-- [ ] Fetch Truck tare and compute netWeightKg = grossWeightKg - tare
-- [ ] Compute loadCost = (netWeightKg / 1000) × grainType.purchasePricePerTon
-- [ ] Close TransportTransaction (status = COMPLETED, endDate = now)
+- [x] Create `WeighingRecord` entity + repository
+- [ ] Implement persistence call inside `StabilizationService` upon stability detection (pending: Epic 2 has not been built yet to wire the real call site — see story 3.2 Task 3)
+- [x] Fetch Truck tare and compute netWeightKg = grossWeightKg - tare
+- [x] Compute loadCost = (netWeightKg / 1000) × grainType.purchasePricePerTon
+- [x] Close TransportTransaction (status = COMPLETED, endDate = now)
 
 ---
 
