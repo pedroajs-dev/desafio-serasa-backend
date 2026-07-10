@@ -211,12 +211,12 @@ So that I can detect when the scale has stabilized and persist the weighing reco
 **And** two concurrent requests for different scaleIds do not block each other (compute() per key)
 
 **Tasks:**
-- [ ] Create `ScaleState` value object (buffer: Deque, consecutiveStableWindows, alreadyPersisted)
-- [ ] Create `StabilizationService` with `ConcurrentHashMap<String, ScaleState>`
-- [ ] Implement `process(scaleId, plate, weightKg)` using `map.compute()` for atomicity
-- [ ] Implement stdDev calculation over the buffer
-- [ ] Implement reset logic (weight < 50kg threshold)
-- [ ] Inject stabilization params from `application.yml`
+- [x] Create `ScaleState` value object (buffer: Deque, consecutiveStableWindows, alreadyPersisted)
+- [x] Create `StabilizationService` with `ConcurrentHashMap<String, ScaleState>`
+- [x] Implement `process(scaleId, plate, weightKg)` using `map.compute()` for atomicity
+- [x] Implement stdDev calculation over the buffer
+- [x] Implement reset logic (weight < 50kg threshold)
+- [x] Inject stabilization params from `application.yml`
 
 ---
 
