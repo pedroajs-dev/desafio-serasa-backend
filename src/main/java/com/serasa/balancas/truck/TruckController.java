@@ -1,5 +1,6 @@
 package com.serasa.balancas.truck;
 
+import com.serasa.balancas.common.exception.ResourceNotFoundException;
 import jakarta.validation.Valid;
 import java.net.URI;
 import org.springframework.http.ResponseEntity;
@@ -29,8 +30,8 @@ public class TruckController {
 
     @GetMapping("/{id}")
     public ResponseEntity<Truck> findById(@PathVariable Long id) {
-        return truckRepository.findById(id)
-                .map(ResponseEntity::ok)
-                .orElseGet(() -> ResponseEntity.notFound().build());
+        Truck truck = truckRepository.findById(id)
+                .orElseThrow(() -> new ResourceNotFoundException("Truck not found with id " + id));
+        return ResponseEntity.ok(truck);
     }
 }
