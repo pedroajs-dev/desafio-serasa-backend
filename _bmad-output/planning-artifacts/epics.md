@@ -211,12 +211,12 @@ So that I can detect when the scale has stabilized and persist the weighing reco
 **And** two concurrent requests for different scaleIds do not block each other (compute() per key)
 
 **Tasks:**
-- [ ] Create `ScaleState` value object (buffer: Deque, consecutiveStableWindows, alreadyPersisted)
-- [ ] Create `StabilizationService` with `ConcurrentHashMap<String, ScaleState>`
-- [ ] Implement `process(scaleId, plate, weightKg)` using `map.compute()` for atomicity
-- [ ] Implement stdDev calculation over the buffer
-- [ ] Implement reset logic (weight < 50kg threshold)
-- [ ] Inject stabilization params from `application.yml`
+- [x] Create `ScaleState` value object (buffer: Deque, consecutiveStableWindows, alreadyPersisted)
+- [x] Create `StabilizationService` with `ConcurrentHashMap<String, ScaleState>`
+- [x] Implement `process(scaleId, plate, weightKg)` using `map.compute()` for atomicity
+- [x] Implement stdDev calculation over the buffer
+- [x] Implement reset logic (weight < 50kg threshold)
+- [x] Inject stabilization params from `application.yml`
 
 ---
 
@@ -235,11 +235,11 @@ So that the weighing data is durable and the transaction lifecycle is complete.
 **And** if no open transaction is found for that plate, the event is logged and skipped gracefully
 
 **Tasks:**
-- [ ] Create `WeighingRecord` entity + repository
-- [ ] Implement persistence call inside `StabilizationService` upon stability detection
-- [ ] Fetch Truck tare and compute netWeightKg = grossWeightKg - tare
-- [ ] Compute loadCost = (netWeightKg / 1000) × grainType.purchasePricePerTon
-- [ ] Close TransportTransaction (status = COMPLETED, endDate = now)
+- [x] Create `WeighingRecord` entity + repository
+- [ ] Implement persistence call inside `StabilizationService` upon stability detection (pending: Epic 2 has not been built yet to wire the real call site — see story 3.2 Task 3)
+- [x] Fetch Truck tare and compute netWeightKg = grossWeightKg - tare
+- [x] Compute loadCost = (netWeightKg / 1000) × grainType.purchasePricePerTon
+- [x] Close TransportTransaction (status = COMPLETED, endDate = now)
 
 ---
 

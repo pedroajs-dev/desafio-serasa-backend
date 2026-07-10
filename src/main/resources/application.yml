@@ -22,3 +22,4 @@ stabilization:
   window-size: 15
   std-dev-threshold: 5.0
   consecutive-windows: 3
+  reset-threshold-kg: 50.0
