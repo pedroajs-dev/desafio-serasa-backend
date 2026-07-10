@@ -1,6 +1,10 @@
+---
+baseline_commit: 1093394
+---
+
 # Story 1.5: TransportTransaction Cadastre
 
-Status: ready-for-dev
+Status: done
 
 ## Story
 
@@ -16,14 +20,14 @@ so that the system knows which grain type the truck is carrying before weighing.
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Create `TransportTransaction` entity + repository + REST controller (AC: #1, #2)
-  - [ ] `TransportTransaction` JPA entity: `id` (Long), `truck` (`@ManyToOne`), `grainType` (`@ManyToOne`), `branch` (`@ManyToOne`), `status` (enum, not null), `startDate` (LocalDateTime, set on creation), `endDate` (LocalDateTime, nullable), `grossWeightKg` (nullable, populated later by Epic 3), `netWeightKg` (nullable, populated later by Epic 3), `loadCost` (nullable, populated later by Epic 3)
-  - [ ] `TransportTransactionRepository extends JpaRepository<TransportTransaction, Long>` — add a finder method for Epic 3's later use: `findByTruck_LicensePlateAndStatusNot(String licensePlate, TransactionStatus completedStatus)`, since Epic 3 Story 3.2 needs to look up "the open transaction for this truck plate" and the open transaction can be in ANY non-terminal status (`IN_TRANSIT`, `AT_DOCK`, `WEIGHING`) — this story does not implement automatic transitions between those intermediate states, so a fixed-status lookup would be fragile. Call it as `findByTruck_LicensePlateAndStatusNot(plate, TransactionStatus.COMPLETED)`.
-  - [ ] `TransportTransactionController`: `POST /api/transactions` (201 + body, validate truckId/grainTypeId/branchId exist), `GET /api/transactions/{id}` (200 + body, 404 if not found)
-- [ ] Task 2: Implement status enum: `IN_TRANSIT`, `AT_DOCK`, `WEIGHING`, `COMPLETED` (AC: #1, #3)
-  - [ ] Define `TransactionStatus` enum with these 4 values in that lifecycle order
-- [ ] Task 3: Expose PATCH endpoint for manual status transition (AC: #3)
-  - [ ] `PATCH /api/transactions/{id}/status` accepting `{status: "AT_DOCK"}` body, updates the transaction's status, returns 200 with updated body, 404 if transaction not found, 400 if status value is invalid
+- [x] Task 1: Create `TransportTransaction` entity + repository + REST controller (AC: #1, #2)
+  - [x] `TransportTransaction` JPA entity: `id` (Long), `truck` (`@ManyToOne`), `grainType` (`@ManyToOne`), `branch` (`@ManyToOne`), `status` (enum, not null), `startDate` (LocalDateTime, set on creation), `endDate` (LocalDateTime, nullable), `grossWeightKg` (nullable, populated later by Epic 3), `netWeightKg` (nullable, populated later by Epic 3), `loadCost` (nullable, populated later by Epic 3)
+  - [x] `TransportTransactionRepository extends JpaRepository<TransportTransaction, Long>` — add a finder method for Epic 3's later use: `findByTruck_LicensePlateAndStatusNot(String licensePlate, TransactionStatus completedStatus)`, since Epic 3 Story 3.2 needs to look up "the open transaction for this truck plate" and the open transaction can be in ANY non-terminal status (`IN_TRANSIT`, `AT_DOCK`, `WEIGHING`) — this story does not implement automatic transitions between those intermediate states, so a fixed-status lookup would be fragile. Call it as `findByTruck_LicensePlateAndStatusNot(plate, TransactionStatus.COMPLETED)`.
+  - [x] `TransportTransactionController`: `POST /api/transactions` (201 + body, validate truckId/grainTypeId/branchId exist), `GET /api/transactions/{id}` (200 + body, 404 if not found)
+- [x] Task 2: Implement status enum: `IN_TRANSIT`, `AT_DOCK`, `WEIGHING`, `COMPLETED` (AC: #1, #3)
+  - [x] Define `TransactionStatus` enum with these 4 values in that lifecycle order
+- [x] Task 3: Expose PATCH endpoint for manual status transition (AC: #3)
+  - [x] `PATCH /api/transactions/{id}/status` accepting `{status: "AT_DOCK"}` body, updates the transaction's status, returns 200 with updated body, 404 if transaction not found, 400 if status value is invalid
 
 ## Dev Notes
 
@@ -53,8 +57,46 @@ so that the system knows which grain type the truck is carrying before weighing.
 
 ### Agent Model Used
 
+Claude Sonnet 5
+
 ### Debug Log References
+
+Full regression suite run via `./mvnw test` — all tests pass (BranchControllerTest, GrainTypeControllerTest, TruckControllerTest, ScaleControllerTest, TransportTransactionControllerTest, BalancasApplicationTests), no failures.
 
 ### Completion Notes List
 
+- `TransportTransaction` created via constructor `(truck, grainType, branch)` that sets `status = IN_TRANSIT` and `startDate = now()` internally — matches AC #1 ("transaction is created with status IN_TRANSIT and startDate set") without relying on the client to supply those fields.
+- `POST /api/transactions` validates `truckId`, `grainTypeId`, `branchId` each against their repositories; any missing reference throws `ResourceNotFoundException` (404), consistent with Scale's pattern from Story 1.4.
+- `TransportTransactionRepository.findByTruck_LicensePlateAndStatusNot` added per Dev Notes for Epic 3 Story 3.2's future use; no automatic status transitions implemented in this story, per AC #3 — status change is manual-only via PATCH.
+- No `data.sql` seed rows added for transactions, per Dev Notes (kept scope tight — existing truck/branch/grainType seed rows are sufficient to POST a transaction manually).
+- Response DTO (`TransportTransactionResponse`) surfaces `truckId`/`grainTypeId`/`branchId` as flat ids rather than nested entities, consistent with `ScaleResponse`'s convention from Story 1.4.
+
+### Code Review Findings and Fixes (2026-07-10)
+
+A `code-review` pass surfaced 5 findings (1 CONFIRMED correctness, 1 PLAUSIBLE correctness, 1 CONFIRMED altitude, 1 PLAUSIBLE correctness, 1 CONFIRMED simplification). All 5 were fixed:
+
+1. **Duplicate open transactions per truck (CRITICAL, blocked Epic 3 correctness).** `findByTruck_LicensePlateAndStatusNot` returns a single entity, but nothing stopped a truck from having more than one non-`COMPLETED` transaction — Epic 3 Story 3.2 would hit `IncorrectResultSizeDataAccessException` (unhandled → raw 500) the first time a truck had two open transactions. Fixed by adding a guard in `create()`: if the finder already returns an open transaction for the truck, `POST /api/transactions` now throws `BusinessException` → 400, guaranteeing the finder's single-result contract holds for Epic 3.
+2. **(Same root cause as #1, folded into the fix above.)**
+3. **Hand-rolled enum parsing in PATCH `/status`.** `StatusUpdateRequest.status` was `String`, manually parsed via `TransactionStatus.valueOf()` in a try/catch that rethrew as `BusinessException` — a pattern every future enum-bodied endpoint would have had to copy. Fixed by typing the field as `TransactionStatus` directly and adding a single `@ExceptionHandler(HttpMessageNotReadableException.class)` to `GlobalExceptionHandler`, so Jackson's deserialization failure is now caught centrally for all controllers, present and future.
+4. **Non-numeric path variable on `{id}` endpoints leaked a raw 500.** `GET/PATCH /api/transactions/{id}` (and, retroactively, `GET /api/trucks/{id}`) had no handler for `MethodArgumentTypeMismatchException`. Fixed by adding a handler to `GlobalExceptionHandler` that returns 400 with the standard `ErrorResponse` shape — confirmed this also fixes the pre-existing gap in `TruckController` without touching that file.
+5. **Repeated test boilerplate.** 4+ tests repeated an identical "build request, POST, parse JSON for id" block. Extracted into `createTruck()`/`createTransaction()` helpers in the test class — this also fixed a latent test-isolation bug: with the new duplicate-transaction guard, reusing seeded `truckId=1` across every test would have made later tests fail against earlier tests' leftover open transactions (tests share one H2 instance with no `@Transactional` rollback), so each test now creates its own truck via `TruckRepository` for guaranteed isolation.
+
+Added a regression test (`returns400WhenTruckAlreadyHasOpenTransaction`) plus a companion (`allowsNewTransactionAfterPreviousOneCompleted`) proving the guard clears once the transaction is completed, and a `getByIdReturns400WhenIdIsNotNumeric` test for finding #4. Full suite re-run after fixes: 30/30 tests pass (up from 27). Manually verified all 5 fixes end-to-end against the running app (duplicate-transaction 400, non-numeric id 400 on both `/transactions` and `/trucks`, invalid-enum PATCH 400, and truck freed for a new transaction after PATCH to `COMPLETED`).
+
 ### File List
+
+- src/main/java/com/serasa/balancas/transporttransaction/TransactionStatus.java (new)
+- src/main/java/com/serasa/balancas/transporttransaction/TransportTransaction.java (new)
+- src/main/java/com/serasa/balancas/transporttransaction/TransportTransactionRepository.java (new)
+- src/main/java/com/serasa/balancas/transporttransaction/TransportTransactionRequest.java (new)
+- src/main/java/com/serasa/balancas/transporttransaction/TransportTransactionResponse.java (new)
+- src/main/java/com/serasa/balancas/transporttransaction/StatusUpdateRequest.java (new, field retyped String → TransactionStatus during review fixes)
+- src/main/java/com/serasa/balancas/transporttransaction/TransportTransactionController.java (new, duplicate-open-transaction guard added during review fixes)
+- src/main/java/com/serasa/balancas/common/exception/GlobalExceptionHandler.java (modified — added HttpMessageNotReadableException and MethodArgumentTypeMismatchException handlers during review fixes)
+- src/test/java/com/serasa/balancas/transporttransaction/TransportTransactionControllerTest.java (new, refactored with shared helpers and 3 new tests during review fixes)
+
+## Change Log
+
+- 2026-07-10: Implemented TransportTransaction cadastre (entity, status enum, repository with forward-looking finder for Epic 3, controller with create/get/patch-status endpoints, tests). Status set to review.
+- 2026-07-10: Fixed all 5 code-review findings — duplicate-open-transaction guard, enum-typed PATCH DTO with centralized deserialization-error handling, MethodArgumentTypeMismatchException handling (retroactively fixes TruckController too), and de-duplicated test helpers. 30/30 tests pass; manually verified end-to-end.
+- 2026-07-10: Manual final pass approved — duplicate-transaction rejection confirmed end-to-end with a clear error message; all review findings validated. Status set to done.

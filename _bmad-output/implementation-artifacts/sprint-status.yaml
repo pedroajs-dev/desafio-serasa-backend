@@ -35,7 +35,7 @@
 # - Retrospective is optional at end of each epic
 
 generated: 2026-07-10
-last_updated: 2026-07-10 (story 1.4 moved to review)
+last_updated: 2026-07-10 (story 1.5 done, epic-1 complete)
 project: desafio-serasa
 project_key: NOKEY
 tracking_system: file-system
@@ -43,12 +43,12 @@ story_location: _bmad-output/implementation-artifacts
 
 development_status:
   # ── Epic 1: Core Domain Cadastres ──────────────────────────────
-  epic-1: in-progress
+  epic-1: done
   1-1-project-bootstrap: done
   1-2-branch-and-graintype-cadastres: done
   1-3-truck-cadastre: done
   1-4-scale-cadastre: done
-  1-5-transporttransaction-cadastre: ready-for-dev
+  1-5-transporttransaction-cadastre: done
   epic-1-retrospective: optional
 
   # ── Epic 3: Stabilization Engine ───────────────────────────────
