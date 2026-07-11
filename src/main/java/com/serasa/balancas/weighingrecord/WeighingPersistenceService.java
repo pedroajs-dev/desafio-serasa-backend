@@ -7,6 +7,8 @@ import com.serasa.balancas.stabilization.WeighingPersistencePort;
 import com.serasa.balancas.transporttransaction.TransactionStatus;
 import com.serasa.balancas.transporttransaction.TransportTransaction;
 import com.serasa.balancas.transporttransaction.TransportTransactionRepository;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDateTime;
 import java.util.Optional;
 import org.slf4j.Logger;
@@ -75,23 +77,36 @@ public class WeighingPersistenceService implements WeighingPersistencePort {
 
         double loadCost = (netWeightKg / 1000.0) * transaction.getGrainType().getPurchasePricePerTon().doubleValue();
 
+        // grossWeightKg inherits floating-point residue from averaging raw sensor readings
+        // (StabilizationResult), and netWeightKg/loadCost compound that residue further.
+        // Round to 2 decimal places (kg / currency precision) before persisting, using the
+        // same BigDecimal.setScale(2, HALF_UP) pattern as MarginService to avoid reintroducing
+        // drift at the rounding step itself.
+        double roundedGrossWeightKg = round2(grossWeightKg);
+        double roundedNetWeightKg = round2(netWeightKg);
+        double roundedLoadCost = round2(loadCost);
+
         WeighingRecord record = new WeighingRecord(
                 transaction.getTruck(),
                 scale.get(),
                 transaction.getGrainType(),
                 transaction,
-                grossWeightKg,
+                roundedGrossWeightKg,
                 tare,
-                netWeightKg,
-                loadCost,
+                roundedNetWeightKg,
+                roundedLoadCost,
                 LocalDateTime.now());
         weighingRecordRepository.save(record);
 
-        transaction.setGrossWeightKg(grossWeightKg);
-        transaction.setNetWeightKg(netWeightKg);
-        transaction.setLoadCost(loadCost);
+        transaction.setGrossWeightKg(roundedGrossWeightKg);
+        transaction.setNetWeightKg(roundedNetWeightKg);
+        transaction.setLoadCost(roundedLoadCost);
         transaction.setStatus(TransactionStatus.COMPLETED);
         transaction.setEndDate(LocalDateTime.now());
         transportTransactionRepository.save(transaction);
+    }
+
+    private static double round2(double value) {
+        return BigDecimal.valueOf(value).setScale(2, RoundingMode.HALF_UP).doubleValue();
     }
 }

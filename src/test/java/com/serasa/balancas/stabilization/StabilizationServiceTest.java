@@ -2,7 +2,15 @@ package com.serasa.balancas.stabilization;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -143,6 +151,102 @@ class StabilizationServiceTest {
         // alreadyPersisted re-armed correctly means it's now guarding truck B's session
         for (int i = 0; i < 5; i++) {
             assertThat(service.process(SCALE_ID, plateB, 3000.0)).isEmpty();
+        }
+    }
+
+    @Test
+    void continuouslyOscillatingWeightNeverStabilizes() {
+        double[] oscillating = new double[25];
+        for (int i = 0; i < oscillating.length; i++) {
+            oscillating[i] = (i % 2 == 0) ? 900.0 : 1100.0;
+        }
+        for (double reading : oscillating) {
+            assertThat(service.process(SCALE_ID, PLATE, reading)).isEmpty();
+        }
+    }
+
+    @Test
+    void concurrentReadingsOnSameScaleStabilizeExactlyOnce() throws InterruptedException {
+        int threadCount = 20;
+        int readingsPerThread = 20;
+        ExecutorService executor = Executors.newFixedThreadPool(threadCount);
+        CountDownLatch startLatch = new CountDownLatch(1);
+        CountDownLatch doneLatch = new CountDownLatch(threadCount);
+        ConcurrentLinkedQueue<StabilizationResult> results = new ConcurrentLinkedQueue<>();
+
+        try {
+            for (int t = 0; t < threadCount; t++) {
+                executor.submit(() -> {
+                    try {
+                        startLatch.await();
+                        for (int i = 0; i < readingsPerThread; i++) {
+                            service.process(SCALE_ID, PLATE, 1000.0).ifPresent(results::add);
+                        }
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                    } finally {
+                        doneLatch.countDown();
+                    }
+                });
+            }
+
+            startLatch.countDown(); // release all threads at once to maximize overlap
+            assertThat(doneLatch.await(10, TimeUnit.SECONDS)).isTrue();
+        } finally {
+            executor.shutdown();
+        }
+
+        // every reading is the same constant, so stdDev is always 0 regardless of interleaving order --
+        // compute()'s per-key atomicity must still guarantee exactly one persistence, not zero or many
+        assertThat(results).hasSize(1);
+        assertThat(results.peek().scaleId()).isEqualTo(SCALE_ID);
+        assertThat(results.peek().stabilizedWeightKg()).isEqualTo(1000.0);
+    }
+
+    @Test
+    void concurrentReadingsOnDifferentScalesStabilizeIndependentlyWithoutCrossContamination() throws InterruptedException {
+        int scaleCount = 10;
+        int readingsPerScale = properties.windowSize() + properties.consecutiveWindows() - 1 + 15;
+        ExecutorService executor = Executors.newFixedThreadPool(scaleCount);
+        CountDownLatch startLatch = new CountDownLatch(1);
+        CountDownLatch doneLatch = new CountDownLatch(scaleCount);
+        ConcurrentLinkedQueue<StabilizationResult> results = new ConcurrentLinkedQueue<>();
+        List<String> scaleIds = IntStream.range(0, scaleCount)
+                .mapToObj(i -> "SCALE-" + i)
+                .collect(Collectors.toList());
+
+        try {
+            for (String scaleId : scaleIds) {
+                double weightForScale = 1000.0 + (scaleIds.indexOf(scaleId) * 100.0);
+                executor.submit(() -> {
+                    try {
+                        startLatch.await();
+                        for (int i = 0; i < readingsPerScale; i++) {
+                            service.process(scaleId, PLATE, weightForScale).ifPresent(results::add);
+                        }
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                    } finally {
+                        doneLatch.countDown();
+                    }
+                });
+            }
+
+            startLatch.countDown(); // release all scale threads at once for true parallelism
+            assertThat(doneLatch.await(10, TimeUnit.SECONDS)).isTrue();
+        } finally {
+            executor.shutdown();
+        }
+
+        // exactly one persistence per scale, each with its own weight -- no blending across scales' buffers
+        assertThat(results).hasSize(scaleCount);
+        for (String scaleId : scaleIds) {
+            double expectedWeight = 1000.0 + (scaleIds.indexOf(scaleId) * 100.0);
+            StabilizationResult resultForScale = results.stream()
+                    .filter(r -> r.scaleId().equals(scaleId))
+                    .findFirst()
+                    .orElseThrow(() -> new AssertionError("No result for " + scaleId));
+            assertThat(resultForScale.stabilizedWeightKg()).isEqualTo(expectedWeight);
         }
     }
 

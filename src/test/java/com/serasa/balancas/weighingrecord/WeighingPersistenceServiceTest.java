@@ -81,6 +81,33 @@ class WeighingPersistenceServiceTest {
     }
 
     @Test
+    void roundsGrossNetWeightAndLoadCostToTwoDecimalPlacesForRepeatingDecimalAverage() {
+        String plate = uniquePlate();
+        TransportTransaction transaction = openTransaction(plate, 8500.0);
+
+        // Simulates a stabilized average like 12500 + 1/3, mirroring StabilizationResult's
+        // stabilizedWeightKg() carrying floating-point residue from averaging raw readings.
+        // netWeightKg = 12500.333333333333 - 8500 = 4000.333333333333333;
+        // loadCost (Soja, 180.00/ton) = (4000.333333333333/1000) * 180 = 720.05999999999994...
+        double repeatingDecimalGrossWeight = 12500.0 + (1.0 / 3.0);
+        weighingPersistenceService.persist(StabilizationResult.of(SCALE_ID, plate, repeatingDecimalGrossWeight));
+
+        WeighingRecord record = weighingRecordRepository.findAll().stream()
+                .filter(r -> r.getTransportTransaction().getId().equals(transaction.getId()))
+                .findFirst()
+                .orElseThrow();
+
+        assertThat(record.getGrossWeightKg()).isEqualTo(12500.33);
+        assertThat(record.getNetWeightKg()).isEqualTo(4000.33);
+        assertThat(record.getLoadCost()).isEqualTo(720.06);
+
+        TransportTransaction reloaded = transportTransactionRepository.findById(transaction.getId()).orElseThrow();
+        assertThat(reloaded.getGrossWeightKg()).isEqualTo(12500.33);
+        assertThat(reloaded.getNetWeightKg()).isEqualTo(4000.33);
+        assertThat(reloaded.getLoadCost()).isEqualTo(720.06);
+    }
+
+    @Test
     void skipsGracefullyWhenNetWeightIsNonPositive() {
         String plate = uniquePlate();
         TransportTransaction transaction = openTransaction(plate, 8500.0);
