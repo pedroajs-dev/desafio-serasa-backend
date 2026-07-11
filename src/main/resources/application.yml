@@ -18,6 +18,12 @@ spring:
 server:
   port: 8080
 
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+
 stabilization:
   window-size: 15
   std-dev-threshold: 5.0
