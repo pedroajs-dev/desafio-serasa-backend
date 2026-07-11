@@ -11,3 +11,9 @@
 - `apiKey` is stored and compared in plaintext (`ScaleRepository.findByIdAndApiKey`) — no hashing, no constant-time comparison. Accepted trade-off per Story 1.4; revisit if this becomes internet-facing rather than LAN/VPN-only.
 - `WeighingPersistenceService.persist()`'s documented "never throws" contract (log-and-skip internally, per Story 3.2) means the `StabilizationService.markPersistenceFailed()` retry path added in Story 2.1 is currently unreachable in practice. Only becomes meaningful if persistence failures start propagating as exceptions.
 - No structured audit logging of authentication failures (401s) on the ingestion endpoint — could aid detecting compromised/spoofed scale keys, but no requirement calls for it yet.
+
+## Deferred from: code review of story-2.2 (2026-07-10)
+
+- Unbounded in-memory `seenKeys` set in `ReadingIdempotencyService` — no TTL, eviction, or size cap; grows one entry per distinct `(scaleId, seq)` for the process lifetime. Accepted architectural risk, same profile as `StabilizationService`'s `ScaleState` map (already logged above). Revisit with a bounded/TTL structure or shared store if ingestion volume or retention grows.
+- No distributed/persistent idempotency state — the guard is per-JVM and non-durable. Behind more than one replica, duplicates routed to different instances both pass; a restart re-accepts previously-seen readings. Accepted single-instance/in-memory limitation for this delivery (LAN, single node); would need Redis or similar to guarantee cross-instance/cross-restart idempotency.
+- No validation on the `seq` field (negative/zero/fixed values accepted) — a buggy or malicious device sending a constant `seq` permanently poisons that scale, causing every subsequent reading to be silently discarded as a duplicate. Out of Story 2.2 scope; consider `@Positive` and/or monotonicity checks if device trust becomes a concern.

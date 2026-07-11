@@ -21,12 +21,14 @@ public class ScaleReadingController {
     private final ScaleRepository scaleRepository;
     private final StabilizationService stabilizationService;
     private final WeighingPersistencePort weighingPersistencePort;
+    private final ReadingIdempotencyService readingIdempotencyService;
 
     public ScaleReadingController(ScaleRepository scaleRepository, StabilizationService stabilizationService,
-            WeighingPersistencePort weighingPersistencePort) {
+            WeighingPersistencePort weighingPersistencePort, ReadingIdempotencyService readingIdempotencyService) {
         this.scaleRepository = scaleRepository;
         this.stabilizationService = stabilizationService;
         this.weighingPersistencePort = weighingPersistencePort;
+        this.readingIdempotencyService = readingIdempotencyService;
     }
 
     @PostMapping
@@ -39,12 +41,17 @@ public class ScaleReadingController {
             throw new UnauthorizedException("Invalid or missing X-Scale-Key for scale " + request.id());
         }
 
+        if (readingIdempotencyService.registerAndCheckDuplicate(request.id(), request.seq())) {
+            return ResponseEntity.status(HttpStatus.ACCEPTED).build();
+        }
+
         stabilizationService.process(request.id(), request.plate(), request.weight())
                 .ifPresent(result -> {
                     try {
                         weighingPersistencePort.persist(result);
                     } catch (RuntimeException ex) {
                         stabilizationService.markPersistenceFailed(request.id());
+                        readingIdempotencyService.evict(request.id(), request.seq());
                         throw ex;
                     }
                 });

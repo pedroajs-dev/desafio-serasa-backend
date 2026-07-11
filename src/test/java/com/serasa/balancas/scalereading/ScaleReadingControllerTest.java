@@ -1,6 +1,11 @@
 package com.serasa.balancas.scalereading;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.anyDouble;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -11,6 +16,7 @@ import com.serasa.balancas.graintype.GrainType;
 import com.serasa.balancas.graintype.GrainTypeRepository;
 import com.serasa.balancas.scale.Scale;
 import com.serasa.balancas.scale.ScaleRepository;
+import com.serasa.balancas.stabilization.StabilizationService;
 import com.serasa.balancas.transporttransaction.TransactionStatus;
 import com.serasa.balancas.transporttransaction.TransportTransaction;
 import com.serasa.balancas.transporttransaction.TransportTransactionRepository;
@@ -22,6 +28,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.mock.mockito.SpyBean;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
@@ -53,6 +60,9 @@ class ScaleReadingControllerTest {
     @Autowired
     private WeighingRecordRepository weighingRecordRepository;
 
+    @SpyBean
+    private StabilizationService stabilizationService;
+
     private String uniqueSuffix() {
         return UUID.randomUUID().toString().substring(0, 6).toUpperCase();
     }
@@ -71,7 +81,11 @@ class ScaleReadingControllerTest {
     }
 
     private String readingBody(String scaleId, String plate, double weight) throws Exception {
-        return objectMapper.writeValueAsString(new ScaleReadingRequest(scaleId, plate, weight));
+        return objectMapper.writeValueAsString(new ScaleReadingRequest(scaleId, plate, weight, null, null));
+    }
+
+    private String readingBody(String scaleId, String plate, double weight, Long seq) throws Exception {
+        return objectMapper.writeValueAsString(new ScaleReadingRequest(scaleId, plate, weight, seq, null));
     }
 
     @Test
@@ -149,6 +163,106 @@ class ScaleReadingControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body))
                 .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void duplicateSeqIsDiscardedButStillReturns202() throws Exception {
+        long countBefore = weighingRecordRepository.count();
+
+        // Control: a scale sending 17 stabilizing readings with DISTINCT seq values is
+        // processed normally and persists exactly one WeighingRecord (transaction completes).
+        Scale control = createScale("valid-key-" + uniqueSuffix());
+        String controlPlate = "PLT" + uniqueSuffix();
+        TransportTransaction controlTx = openTransaction(controlPlate, 8500.0);
+        for (int i = 0; i < 17; i++) {
+            mockMvc.perform(post("/api/scales/readings")
+                            .header("X-Scale-Key", control.getApiKey())
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(readingBody(control.getId(), controlPlate, 12500.0, (long) i)))
+                    .andExpect(status().isAccepted());
+        }
+
+        // Dedup: another scale sends 17 identical stabilizing readings that all share seq=1.
+        // Only the first survives the idempotency guard; the other 16 are discarded before
+        // reaching StabilizationService, so the buffer never fills and nothing is persisted.
+        Scale dup = createScale("valid-key-" + uniqueSuffix());
+        String dupPlate = "PLT" + uniqueSuffix();
+        TransportTransaction dupTx = openTransaction(dupPlate, 8500.0);
+        for (int i = 0; i < 17; i++) {
+            mockMvc.perform(post("/api/scales/readings")
+                            .header("X-Scale-Key", dup.getApiKey())
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(readingBody(dup.getId(), dupPlate, 12500.0, 1L)))
+                    .andExpect(status().isAccepted());
+        }
+
+        // Exactly one record persisted — from the control run only. Had idempotency been broken,
+        // the duplicate-seq run would have stabilized too and produced a second record.
+        assertThat(weighingRecordRepository.count()).isEqualTo(countBefore + 1);
+        assertThat(transportTransactionRepository.findById(controlTx.getId()).orElseThrow().getStatus())
+                .isEqualTo(TransactionStatus.COMPLETED);
+        assertThat(transportTransactionRepository.findById(dupTx.getId()).orElseThrow().getStatus())
+                .isEqualTo(TransactionStatus.IN_TRANSIT);
+    }
+
+    @Test
+    void differentSeqValuesAreBothProcessed() throws Exception {
+        Scale scale = createScale("valid-key-" + uniqueSuffix());
+
+        mockMvc.perform(post("/api/scales/readings")
+                        .header("X-Scale-Key", scale.getApiKey())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(readingBody(scale.getId(), "PLT-A", 1000.0, 1L)))
+                .andExpect(status().isAccepted());
+
+        mockMvc.perform(post("/api/scales/readings")
+                        .header("X-Scale-Key", scale.getApiKey())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(readingBody(scale.getId(), "PLT-A", 1000.0, 2L)))
+                .andExpect(status().isAccepted());
+
+        // Both distinct-seq readings reach stabilization — neither is discarded as a duplicate.
+        verify(stabilizationService, times(2)).process(eq(scale.getId()), anyString(), anyDouble());
+    }
+
+    @Test
+    void sameSeqOnDifferentScalesIsNotTreatedAsDuplicate() throws Exception {
+        Scale scaleA = createScale("key-a-" + uniqueSuffix());
+        Scale scaleB = createScale("key-b-" + uniqueSuffix());
+
+        mockMvc.perform(post("/api/scales/readings")
+                        .header("X-Scale-Key", scaleA.getApiKey())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(readingBody(scaleA.getId(), "PLT-B", 1000.0, 1L)))
+                .andExpect(status().isAccepted());
+
+        mockMvc.perform(post("/api/scales/readings")
+                        .header("X-Scale-Key", scaleB.getApiKey())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(readingBody(scaleB.getId(), "PLT-B", 1000.0, 1L)))
+                .andExpect(status().isAccepted());
+
+        // Each scale's seq=1 reading reaches stabilization independently — the shared seq value
+        // does not cause scale B's reading to be discarded against scale A's.
+        verify(stabilizationService, times(1)).process(eq(scaleA.getId()), anyString(), anyDouble());
+        verify(stabilizationService, times(1)).process(eq(scaleB.getId()), anyString(), anyDouble());
+    }
+
+    @Test
+    void wrongKeyWithPreviouslyUsedSeqStillReturns401() throws Exception {
+        Scale scale = createScale("valid-key-" + uniqueSuffix());
+
+        mockMvc.perform(post("/api/scales/readings")
+                        .header("X-Scale-Key", scale.getApiKey())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(readingBody(scale.getId(), "PLT-C", 1000.0, 1L)))
+                .andExpect(status().isAccepted());
+
+        mockMvc.perform(post("/api/scales/readings")
+                        .header("X-Scale-Key", "wrong-key")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(readingBody(scale.getId(), "PLT-C", 1000.0, 1L)))
+                .andExpect(status().isUnauthorized());
     }
 
     @Test

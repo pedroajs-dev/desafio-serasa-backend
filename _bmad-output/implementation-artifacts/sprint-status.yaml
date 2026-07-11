@@ -35,7 +35,7 @@
 # - Retrospective is optional at end of each epic
 
 generated: 2026-07-10
-last_updated: 2026-07-10 (story 2.1 created, epic-2 in-progress)
+last_updated: 2026-07-10 (story 2.2 done — all review patches applied)
 project: desafio-serasa
 project_key: NOKEY
 tracking_system: file-system
@@ -58,9 +58,9 @@ development_status:
   epic-3-retrospective: optional
 
   # ── Epic 2: Scale Ingestion Endpoint ───────────────────────────
-  epic-2: in-progress
+  epic-2: done
   2-1-ingestion-endpoint-with-authentication: done
-  2-2-idempotency-via-seq-field: backlog
+  2-2-idempotency-via-seq-field: done
   epic-2-retrospective: optional
 
   # ── Epic 4: Margin & Cost Calculation ──────────────────────────
