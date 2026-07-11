@@ -47,4 +47,15 @@ public class StabilizationService {
 
         return Optional.ofNullable(ready.get());
     }
+
+    /**
+     * Allows a later stable reading to retry persistence after the caller's
+     * {@code WeighingPersistencePort.persist()} call failed for the given scale.
+     */
+    public void markPersistenceFailed(String scaleId) {
+        states.computeIfPresent(scaleId, (id, state) -> {
+            state.alreadyPersisted = false;
+            return state;
+        });
+    }
 }

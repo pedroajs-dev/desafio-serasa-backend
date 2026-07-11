@@ -1,8 +1,8 @@
 package com.serasa.balancas.scale;
 
-public record ScaleResponse(String id, Long branchId, String apiKey) {
+public record ScaleResponse(String id, Long branchId) {
 
     public static ScaleResponse from(Scale scale) {
-        return new ScaleResponse(scale.getId(), scale.getBranch().getId(), scale.getApiKey());
+        return new ScaleResponse(scale.getId(), scale.getBranch().getId());
     }
 }
