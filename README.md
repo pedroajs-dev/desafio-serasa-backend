@@ -18,7 +18,7 @@ A aplicação sobe em `http://localhost:8080`.
 - **Swagger UI**: `http://localhost:8080/swagger-ui.html` — documentação OpenAPI gerada automaticamente pelo `springdoc-openapi` a partir dos controllers existentes.
 - Dados de exemplo (filiais, tipos de grão, caminhões, balanças) são carregados automaticamente no boot via `src/main/resources/data.sql`.
 
-Para uma demonstração guiada com dados variados e um dashboard visual, veja [`docs/demo-dashboard.md`](docs/demo-dashboard.md) — inclui scripts opcionais (`scripts/seed_demo_data.py`, `scripts/demo.py`) que exercitam o fluxo real de ponta a ponta via HTTP.
+Para uma demonstração guiada com dados variados e um dashboard visual, veja [`docs/demo-dashboard.md`](docs/demo-dashboard.md) — inclui scripts opcionais (`scripts/seed_demo_data.py`, `scripts/demo.py`) que exercitam o fluxo real de ponta a ponta via HTTP, além de `scripts/test_anomaly_detection.py`, que dispara manualmente o WARN de detecção de anomalia (ver seção "Detecção de anomalia de peso" abaixo e ["Manually verifying anomaly detection"](docs/demo-dashboard.md#manually-verifying-anomaly-detection) no doc de demo).
 
 ## Endpoints
 
@@ -94,6 +94,14 @@ Exemplo com dados reais de `data.sql` (Milho): `purchasePricePerTon = 95.50`, `c
 
 Esse valor de estoque do Milho foi deliberadamente reduzido no seed (de um valor maior para 2000) para que a margem calculada já ultrapasse o limiar de escassez (`reports.scarcity-threshold: 0.18`, em `application.yml`) desde o boot da aplicação, sem precisar de nenhuma edição manual no banco — o endpoint `/api/reports/scarcity-alerts` já mostra o Milho como alerta ativo assim que a aplicação sobe.
 
+## Detecção de anomalia de peso
+
+Em `WeighingPersistenceService.persist()`, após o `netWeightKg` ser calculado e validado como positivo, o `grossWeightKg` estabilizado é comparado a um teto de carga plausível para aquele caminhão: `tare × (1 + anomaly-detection.max-payload-multiplier)`. Com o valor padrão configurado em `application.yml` (`max-payload-multiplier: 3.0`), o teto é `tare × 4` — por exemplo, para um caminhão com tara de 8500kg, um peso bruto acima de 34000kg dispara o alerta.
+
+Se o teto for ultrapassado, um log `WARN` é emitido com `plate`, `scaleId`, `grossWeightKg` e o teto calculado, para investigação manual (possível glitch de sensor ou tentativa de fraude). **Isso é apenas detecção/log — não bloqueia nem rejeita a pesagem**: o `WeighingRecord` é persistido e a `TransportTransaction` é fechada normalmente, para que um sensor com ruído não deixe um caminhão real parado em trânsito. Não é um sistema de prevenção de fraude, apenas um sinal de nível `WARN` para acompanhamento.
+
+A cobertura automatizada dessa regra está em `WeighingPersistenceServiceTest` (um caso dentro da faixa plausível não gera o log; um caso muito acima do teto gera o `WARN` e ainda assim persiste normalmente). Para observar o `WARN` de fato saindo no console de uma aplicação rodando (não apenas capturado dentro do teste JUnit), existe um script dedicado, `scripts/test_anomaly_detection.py`: ele cria um caminhão, abre uma transação, envia leituras visando um peso bruto propositalmente muito acima do teto calculado (lido de `application.yml`, não fixado no código) e imprime um resumo pedindo para conferir a linha `Anomaly detected` no console da aplicação. Ver a seção ["Manually verifying anomaly detection"](docs/demo-dashboard.md#manually-verifying-anomaly-detection) em `docs/demo-dashboard.md` para o passo a passo completo — o script só dispara a condição e reporta o que enviou, não lê o stdout da aplicação, então não substitui o teste automatizado.
+
 ## Nota de arquitetura: Kafka (desenho) vs. processamento síncrono (entrega)
 
 A solução foi originalmente desenhada para usar Kafka (Redpanda) como camada de ingestão assíncrona: o endpoint publicaria a leitura em um tópico particionado por `scaleId`, garantindo ordem das leituras daquela balança dentro da partição — pré-requisito para o algoritmo de janela deslizante funcionar sem lock manual entre threads — e desacoplando a ingestão (que deve responder rápido) do processamento de estabilização (que pode ter retry, levar mais tempo, etc.), além de escalar horizontalmente adicionando partições/consumers.
@@ -159,7 +167,6 @@ chmod +x .git/hooks/pre-commit
 
 - Migrar a ingestão para Kafka/Redpanda (ver seção de arquitetura acima), permitindo escalar horizontalmente e desacoplar ingestão de processamento.
 - Buffer local no ESP32 com reenvio em caso de falha de rede (exigiria alterar o firmware real do dispositivo, fora do escopo).
-- Detecção de anomalia: peso estabilizado muito fora da faixa esperada para aquele caminhão (tara + carga máxima teórica) disparando alerta de possível fraude ou erro de sensor.
 - Dashboard em tempo real via WebSocket (o dashboard atual em `docs/demo-dashboard.md` faz polling HTTP a cada 3s, suficiente para demonstração).
 - mTLS ou rotação de `apiKey` para as balanças, em vez de chave estática.
 - Migrar o formato de erro para RFC 9457 (Problem Details): hoje usa um `ErrorResponse` customizado via `GlobalExceptionHandler`, funcional e testado, mas o padrão RFC 9457 (suportado nativamente pelo Spring Boot 3 via `ProblemDetail`) é o padrão de mercado para corpos de erro HTTP.

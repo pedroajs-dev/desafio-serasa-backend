@@ -13,6 +13,7 @@ import java.time.LocalDateTime;
 import java.util.Optional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -24,12 +25,15 @@ public class WeighingPersistenceService implements WeighingPersistencePort {
     private final TransportTransactionRepository transportTransactionRepository;
     private final WeighingRecordRepository weighingRecordRepository;
     private final ScaleRepository scaleRepository;
+    private final double maxPayloadMultiplier;
 
     public WeighingPersistenceService(TransportTransactionRepository transportTransactionRepository,
-            WeighingRecordRepository weighingRecordRepository, ScaleRepository scaleRepository) {
+            WeighingRecordRepository weighingRecordRepository, ScaleRepository scaleRepository,
+            @Value("${anomaly-detection.max-payload-multiplier}") double maxPayloadMultiplier) {
         this.transportTransactionRepository = transportTransactionRepository;
         this.weighingRecordRepository = weighingRecordRepository;
         this.scaleRepository = scaleRepository;
+        this.maxPayloadMultiplier = maxPayloadMultiplier;
     }
 
     @Override
@@ -73,6 +77,14 @@ public class WeighingPersistenceService implements WeighingPersistencePort {
                             + "netWeightKg={} — dropping stabilized reading",
                     result.plate(), result.scaleId(), grossWeightKg, tare, netWeightKg);
             return;
+        }
+
+        double maxPlausibleGrossWeightKg = tare * (1 + maxPayloadMultiplier);
+        if (grossWeightKg > maxPlausibleGrossWeightKg) {
+            log.warn("Anomaly detected: grossWeightKg exceeds plausible capacity for plate={} (scaleId={}): "
+                            + "grossWeightKg={}, threshold={} (tare={}, maxPayloadMultiplier={})",
+                    result.plate(), result.scaleId(), grossWeightKg, maxPlausibleGrossWeightKg, tare,
+                    maxPayloadMultiplier);
         }
 
         double loadCost = (netWeightKg / 1000.0) * transaction.getGrainType().getPurchasePricePerTon().doubleValue();
