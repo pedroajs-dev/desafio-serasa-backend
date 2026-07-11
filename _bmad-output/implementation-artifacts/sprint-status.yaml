@@ -43,7 +43,7 @@
 #   detail file path, and how it was discovered.
 
 generated: 2026-07-10
-last_updated: 2026-07-11 (story 6.1 done)
+last_updated: 2026-07-11 (story 7.1 review)
 project: desafio-serasa
 project_key: NOKEY
 tracking_system: file-system
@@ -83,14 +83,14 @@ development_status:
   epic-5-retrospective: optional
 
   # ── Epic 6: ESP32 Simulator & Tests ────────────────────────────
-  epic-6: in-progress
+  epic-6: done
   6-1-stabilizationservice-unit-tests: done
   6-2-esp32-simulator: done
   epic-6-retrospective: optional
 
   # ── Epic 7: Documentation & Delivery ───────────────────────────
-  epic-7: backlog
-  7-1-readme-and-delivery-artifacts: backlog
+  epic-7: in-progress
+  7-1-readme-and-delivery-artifacts: review
   epic-7-retrospective: optional
 
 standalone_fixes:
