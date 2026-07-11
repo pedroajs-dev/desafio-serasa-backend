@@ -1,3 +1,5 @@
+# This file fully replaces (not merges with) src/main/resources/application.yml under
+# @SpringBootTest — any property added there that tests depend on must be mirrored here too.
 spring:
   datasource:
     url: jdbc:h2:mem:balancas-test-${random.uuid};DB_CLOSE_DELAY=-1
@@ -22,3 +24,6 @@ stabilization:
   window-size: 15
   std-dev-threshold: 5.0
   consecutive-windows: 3
+
+reports:
+  scarcity-threshold: 0.18

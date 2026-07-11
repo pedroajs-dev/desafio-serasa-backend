@@ -23,3 +23,6 @@ stabilization:
   std-dev-threshold: 5.0
   consecutive-windows: 3
   reset-threshold-kg: 50.0
+
+reports:
+  scarcity-threshold: 0.18
