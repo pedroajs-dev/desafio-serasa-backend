@@ -35,7 +35,7 @@
 # - Retrospective is optional at end of each epic
 
 generated: 2026-07-10
-last_updated: 2026-07-10 (story 2.2 done — all review patches applied)
+last_updated: 2026-07-10 (story 4.1 done — code review approved, epic-4 complete)
 project: desafio-serasa
 project_key: NOKEY
 tracking_system: file-system
@@ -64,8 +64,8 @@ development_status:
   epic-2-retrospective: optional
 
   # ── Epic 4: Margin & Cost Calculation ──────────────────────────
-  epic-4: backlog
-  4-1-margin-calculation-service: backlog
+  epic-4: done
+  4-1-margin-calculation-service: done
   epic-4-retrospective: optional
 
   # ── Epic 5: Reports & Statistics ───────────────────────────────
