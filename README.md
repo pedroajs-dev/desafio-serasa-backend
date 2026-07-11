@@ -2,6 +2,22 @@
 
 Solução para o desafio técnico backend: ingestão, estabilização e armazenamento de leituras de peso de balanças (ESP32) em filiais de transporte de grãos, com cálculo de custo/margem e relatórios administrativos.
 
+## Sumário
+
+- [Como rodar](#como-rodar)
+- [Endpoints](#endpoints)
+- [Estratégia de estabilização](#estratégia-de-estabilização)
+- [Cálculo de margem e custo](#cálculo-de-margem-e-custo)
+- [Detecção de anomalia de peso](#detecção-de-anomalia-de-peso)
+- [Nota de arquitetura: Kafka (desenho) vs. processamento síncrono (entrega)](#nota-de-arquitetura-kafka-desenho-vs-processamento-síncrono-entrega)
+- [Estratégia de branches, PRs e revisão](#estratégia-de-branches-prs-e-revisão)
+- [Decisão de arquitetura interna: MVC em vez de Hexagonal/Ports & Adapters](#decisão-de-arquitetura-interna-mvc-em-vez-de-hexagonalports--adapters)
+- [Observabilidade](#observabilidade)
+- [Trade-offs conhecidos](#trade-offs-conhecidos)
+- [Uso de IA](#uso-de-ia)
+- [Disciplina de processo](#disciplina-de-processo)
+- [Sugestões de expansão (não implementadas)](#sugestões-de-expansão-não-implementadas)
+
 ## Como rodar
 
 Pré-requisito: Java 21. Nenhum outro setup externo é necessário (sem Docker, sem containers).
