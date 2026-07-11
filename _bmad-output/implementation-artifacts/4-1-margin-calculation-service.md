@@ -89,3 +89,4 @@ claude-sonnet-5
 
 - 2026-07-10: Implemented Story 4.1 — `MarginService` with linear-interpolation margin calculation (5%–20%) and on-demand sale price derivation.
 - 2026-07-10: Code review approved — no findings. Double-vs-BigDecimal rounding approach confirmed sound; noted as a forward-looking consideration for Epic 5's `avg-margin-by-grain` report (averaging many rounded values vs. raw ones).
+- 2026-07-10: Follow-up (Story 5.2 implementation) — the drift concern above did not materialize. `avg-margin-by-grain` calls `calculateMargin(GrainType)` exactly once per grain type; there is no per-transaction margin history persisted anywhere in the schema to accumulate, so there is nothing to average over (n=1 per grain type, not many rounded values summed). The "average" in the epics.md naming turned out to be a misnomer rather than a multi-value aggregation — see `_bmad-output/implementation-artifacts/5-2-margin-and-scarcity-reports.md` AC #1.
