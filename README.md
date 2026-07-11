@@ -108,6 +108,10 @@ Cada um dos 6 épicos numerados do desafio foi desenvolvido em sua própria bran
 
 O código segue uma organização por pacote de domínio (`branch`, `truck`, `scale`, `transporttransaction`, `stabilization`, `margin`, `report`, ...) com Controller → Service/Repository, próxima de um MVC em camadas, em vez de uma arquitetura hexagonal completa com portas e adaptadores em todas as bordas. Exceção pontual: `StabilizationService` depende de uma interface `WeighingPersistencePort` (não diretamente do repositório JPA) para manter o `compute()` da estabilização livre de I/O de banco dentro do lock por chave — um ponto isolado onde a inversão de dependência trouxe benefício concreto, sem generalizar o padrão para o restante do sistema, dado o escopo e prazo do desafio.
 
+## Observabilidade
+
+Spring Boot Actuator (`spring-boot-starter-actuator`) está habilitado, com `micrometer-registry-prometheus` para exportar métricas no formato Prometheus. Endpoints expostos via `management.endpoints.web.exposure.include` em `application.yml`: `/actuator/health`, `/actuator/info`, `/actuator/metrics` e `/actuator/prometheus` — este último já pronto para ser raspado (scrape) por uma instância externa do Prometheus, que **não** está incluída nem rodando neste projeto; é só o endpoint compatível. Nenhuma autenticação foi adicionada nesses endpoints (aplicação local de demonstração, fora do escopo de hardening). Por enquanto são apenas as métricas de infraestrutura padrão do Actuator/Micrometer (JVM, HTTP, HikariCP, etc.) — métricas de negócio customizadas via `MeterRegistry` seguem como sugestão de expansão (ver abaixo).
+
 ## Trade-offs conhecidos
 
 - **H2 em memória, não Postgres**: dados são perdidos a cada restart da aplicação — decisão consciente de simplificação para o ambiente de entrega. O modelo de dados já foi desenhado pensando em Postgres; a migração seria apenas troca de driver/config, sem mudança de schema/lógica.
@@ -160,4 +164,4 @@ chmod +x .git/hooks/pre-commit
 - mTLS ou rotação de `apiKey` para as balanças, em vez de chave estática.
 - Migrar o formato de erro para RFC 9457 (Problem Details): hoje usa um `ErrorResponse` customizado via `GlobalExceptionHandler`, funcional e testado, mas o padrão RFC 9457 (suportado nativamente pelo Spring Boot 3 via `ProblemDetail`) é o padrão de mercado para corpos de erro HTTP.
 - Estratégia de logging estruturada: padronizar nível de log por tipo de evento (`INFO` para pesagem estabilizada/transação fechada, `WARN` para skips conhecidos, `ERROR` para falhas reais), correlacionar `scaleId`/`plate` via MDC por requisição, e adotar formato JSON para facilitar agregação em ferramentas de observabilidade.
-- Observabilidade via Spring Boot Actuator + Prometheus: expor métricas de infraestrutura (`spring-boot-starter-actuator` + `micrometer-registry-prometheus`) e, como evolução, métricas de negócio customizadas via `MeterRegistry` (leituras descartadas por idempotência, tempo médio até estabilização por balança, taxa de skip gracioso por tipo).
+- Métricas de negócio customizadas via `MeterRegistry` (além das métricas de infraestrutura já expostas — ver seção "Observabilidade" acima): leituras descartadas por idempotência, tempo médio até estabilização por balança, taxa de skip gracioso por tipo.
