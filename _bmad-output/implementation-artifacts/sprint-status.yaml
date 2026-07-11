@@ -35,7 +35,7 @@
 # - Retrospective is optional at end of each epic
 
 generated: 2026-07-10
-last_updated: 2026-07-10 (story 5.2 done — code review approved, epic-5 complete)
+last_updated: 2026-07-11 (story 6.2 done — code review approved with 2 patches applied)
 project: desafio-serasa
 project_key: NOKEY
 tracking_system: file-system
@@ -75,9 +75,9 @@ development_status:
   epic-5-retrospective: optional
 
   # ── Epic 6: ESP32 Simulator & Tests ────────────────────────────
-  epic-6: backlog
-  6-1-stabilizationservice-unit-tests: backlog
-  6-2-esp32-simulator: backlog
+  epic-6: in-progress
+  6-1-stabilizationservice-unit-tests: ready-for-dev
+  6-2-esp32-simulator: done
   epic-6-retrospective: optional
 
   # ── Epic 7: Documentation & Delivery ───────────────────────────
