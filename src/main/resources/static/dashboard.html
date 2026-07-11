@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Balancas — Painel Operacional</title>
+<style>
+  :root {
+    --bg: #0f1420;
+    --panel: #161d2e;
+    --panel-border: #263049;
+    --text: #e6ebf5;
+    --text-dim: #8b96ac;
+    --accent: #4f8cff;
+    --alert-bg: #4a1414;
+    --alert-border: #ff5c5c;
+    --alert-text: #ffb3b3;
+    --ok: #3ecf8e;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    padding: 24px 32px 64px;
+  }
+  header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-bottom: 24px;
+  }
+  h1 {
+    font-size: 1.6rem;
+    margin: 0;
+    font-weight: 600;
+  }
+  .subtitle {
+    color: var(--text-dim);
+    font-size: 0.85rem;
+    margin-top: 4px;
+  }
+  .controls {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-size: 0.85rem;
+    color: var(--text-dim);
+  }
+  button {
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    padding: 8px 14px;
+    font-size: 0.85rem;
+    cursor: pointer;
+  }
+  button:hover { filter: brightness(1.1); }
+  #global-banner {
+    display: none;
+    background: var(--alert-bg);
+    border: 1px solid var(--alert-border);
+    color: var(--alert-text);
+    padding: 10px 16px;
+    border-radius: 8px;
+    margin-bottom: 20px;
+    font-size: 0.9rem;
+  }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+    gap: 20px;
+  }
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--panel-border);
+    border-radius: 10px;
+    padding: 18px 20px;
+  }
+  .card h2 {
+    font-size: 1rem;
+    margin: 0 0 12px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .card.alert-card {
+    border-color: var(--alert-border);
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.88rem;
+  }
+  th, td {
+    text-align: left;
+    padding: 6px 8px;
+    border-bottom: 1px solid var(--panel-border);
+  }
+  th {
+    color: var(--text-dim);
+    font-weight: 500;
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+  }
+  tr:last-child td { border-bottom: none; }
+  .bar-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 6px 0;
+    font-size: 0.85rem;
+  }
+  .bar-label { width: 90px; flex-shrink: 0; color: var(--text-dim); }
+  .bar-track {
+    flex: 1;
+    background: #0b0f18;
+    border-radius: 4px;
+    height: 14px;
+    overflow: hidden;
+  }
+  .bar-fill {
+    height: 100%;
+    background: var(--accent);
+    border-radius: 4px;
+  }
+  .bar-value { width: 90px; text-align: right; flex-shrink: 0; }
+  .alert-row {
+    background: rgba(255, 92, 92, 0.12);
+    border: 1px solid var(--alert-border);
+    border-radius: 6px;
+    padding: 8px 10px;
+    margin-bottom: 8px;
+    font-size: 0.85rem;
+  }
+  .alert-row strong { color: var(--alert-text); }
+  .empty-state {
+    color: var(--text-dim);
+    font-size: 0.85rem;
+    font-style: italic;
+    padding: 8px 0;
+  }
+  .card-error {
+    color: var(--alert-text);
+    font-size: 0.85rem;
+    padding: 8px 0;
+  }
+  .updated-at {
+    color: var(--text-dim);
+    font-size: 0.7rem;
+    margin-top: 10px;
+    text-align: right;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>Balancas — Painel Operacional</h1>
+    <div class="subtitle">Relatorios ao vivo de pesagem e margem por tipo de grao</div>
+  </div>
+  <div class="controls">
+    <span id="last-refresh">--</span>
+    <button id="refresh-btn">Atualizar agora</button>
+  </div>
+</header>
+
+<div id="global-banner">Conexao perdida — tentando novamente...</div>
+
+<div class="grid">
+  <div class="card" id="card-cost-by-grain">
+    <h2>Custo por Tipo de Grao</h2>
+    <div class="card-body">Carregando...</div>
+  </div>
+
+  <div class="card" id="card-scale-ranking">
+    <h2>Ranking de Balancas</h2>
+    <div class="card-body">Carregando...</div>
+  </div>
+
+  <div class="card" id="card-avg-duration">
+    <h2>Duracao Media de Pesagem por Filial</h2>
+    <div class="card-body">Carregando...</div>
+  </div>
+
+  <div class="card" id="card-avg-margin">
+    <h2>Margem Media por Tipo de Grao</h2>
+    <div class="card-body">Carregando...</div>
+  </div>
+
+  <div class="card alert-card" id="card-scarcity">
+    <h2>⚠ Alertas de Escassez</h2>
+    <div class="card-body">Carregando...</div>
+  </div>
+</div>
+
+<script>
+  const POLL_INTERVAL_MS = 3000;
+
+  const ENDPOINTS = [
+    { key: 'cost-by-grain', url: '/api/reports/cost-by-grain', render: renderCostByGrain, cardId: 'card-cost-by-grain' },
+    { key: 'scale-ranking', url: '/api/reports/scale-ranking', render: renderScaleRanking, cardId: 'card-scale-ranking' },
+    { key: 'avg-duration', url: '/api/reports/avg-weighing-duration', render: renderAvgDuration, cardId: 'card-avg-duration' },
+    { key: 'avg-margin', url: '/api/reports/avg-margin-by-grain', render: renderAvgMargin, cardId: 'card-avg-margin' },
+    { key: 'scarcity', url: '/api/reports/scarcity-alerts', render: renderScarcity, cardId: 'card-scarcity' },
+  ];
+
+  function fmtNumber(n, decimals) {
+    if (n === null || n === undefined) return '--';
+    return Number(n).toFixed(decimals !== undefined ? decimals : 2);
+  }
+
+  function cardBody(cardId) {
+    return document.querySelector('#' + cardId + ' .card-body');
+  }
+
+  function showCardError(cardId) {
+    cardBody(cardId).innerHTML = '<div class="card-error">Nao foi possivel carregar este relatorio — o servico esta disponivel?</div>';
+  }
+
+  function renderCostByGrain(data, cardId) {
+    const body = cardBody(cardId);
+    if (!data.length) {
+      body.innerHTML = '<div class="empty-state">Nenhum dado disponivel</div>';
+      return;
+    }
+    const max = Math.max(...data.map(d => d.totalLoadCost || 0), 1);
+    let html = '';
+    data.forEach(d => {
+      const pct = Math.max(2, ((d.totalLoadCost || 0) / max) * 100);
+      html += `<div class="bar-row">
+        <div class="bar-label">${escapeHtml(d.grainTypeName)}</div>
+        <div class="bar-track"><div class="bar-fill" style="width:${pct}%"></div></div>
+        <div class="bar-value">R$ ${fmtNumber(d.totalLoadCost)}</div>
+      </div>`;
+    });
+    body.innerHTML = html;
+  }
+
+  function renderScaleRanking(data, cardId) {
+    const body = cardBody(cardId);
+    if (!data.length) {
+      body.innerHTML = '<div class="empty-state">Nenhum dado disponivel</div>';
+      return;
+    }
+    const sorted = [...data].sort((a, b) => (b.weighingCount || 0) - (a.weighingCount || 0));
+    let html = '<table><thead><tr><th>Balanca</th><th>Pesagens</th></tr></thead><tbody>';
+    sorted.forEach(d => {
+      html += `<tr><td>${escapeHtml(d.scaleId)}</td><td>${d.weighingCount}</td></tr>`;
+    });
+    html += '</tbody></table>';
+    body.innerHTML = html;
+  }
+
+  function renderAvgDuration(data, cardId) {
+    const body = cardBody(cardId);
+    if (!data.length) {
+      body.innerHTML = '<div class="empty-state">Nenhum dado disponivel</div>';
+      return;
+    }
+    let html = '<table><thead><tr><th>Filial</th><th>Duracao Media (s)</th></tr></thead><tbody>';
+    data.forEach(d => {
+      html += `<tr><td>${escapeHtml(d.branchName)}</td><td>${fmtNumber(d.avgDurationSeconds)}</td></tr>`;
+    });
+    html += '</tbody></table>';
+    body.innerHTML = html;
+  }
+
+  function renderAvgMargin(data, cardId) {
+    const body = cardBody(cardId);
+    if (!data.length) {
+      body.innerHTML = '<div class="empty-state">Nenhum dado disponivel</div>';
+      return;
+    }
+    let html = '<table><thead><tr><th>Grao</th><th>Margem</th></tr></thead><tbody>';
+    data.forEach(d => {
+      html += `<tr><td>${escapeHtml(d.grainTypeName)}</td><td>${fmtNumber(Number(d.margin) * 100)}%</td></tr>`;
+    });
+    html += '</tbody></table>';
+    body.innerHTML = html;
+  }
+
+  function renderScarcity(data, cardId) {
+    const body = cardBody(cardId);
+    if (!data.length) {
+      body.innerHTML = '<div class="empty-state">No scarcity alerts</div>';
+      return;
+    }
+    let html = '';
+    data.forEach(d => {
+      html += `<div class="alert-row">
+        <strong>${escapeHtml(d.grainTypeName)}</strong> — margem ${fmtNumber(Number(d.margin) * 100)}%,
+        estoque atual ${fmtNumber(d.currentStock, 0)} kg de ${fmtNumber(d.maxReferenceStock, 0)} kg de referencia
+      </div>`;
+    });
+    body.innerHTML = html;
+  }
+
+  function escapeHtml(str) {
+    if (str === null || str === undefined) return '';
+    const div = document.createElement('div');
+    div.textContent = String(str);
+    return div.innerHTML;
+  }
+
+  async function fetchOne(endpoint) {
+    try {
+      const res = await fetch(endpoint.url, { cache: 'no-store' });
+      if (!res.ok) throw new Error('HTTP ' + res.status);
+      const data = await res.json();
+      endpoint.render(data, endpoint.cardId);
+      return true;
+    } catch (e) {
+      showCardError(endpoint.cardId);
+      return false;
+    }
+  }
+
+  async function pollAll() {
+    const results = await Promise.allSettled(ENDPOINTS.map(fetchOne));
+    const allFailed = results.every(r => r.status === 'fulfilled' && r.value === false);
+    document.getElementById('global-banner').style.display = allFailed ? 'block' : 'none';
+    document.getElementById('last-refresh').textContent =
+      'Ultima atualizacao: ' + new Date().toLocaleTimeString('pt-BR');
+  }
+
+  document.getElementById('refresh-btn').addEventListener('click', pollAll);
+
+  pollAll();
+  setInterval(pollAll, POLL_INTERVAL_MS);
+</script>
+
+</body>
+</html>
