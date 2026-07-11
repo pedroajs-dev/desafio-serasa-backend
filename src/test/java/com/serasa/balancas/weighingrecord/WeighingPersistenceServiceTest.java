@@ -14,10 +14,14 @@ import com.serasa.balancas.truck.Truck;
 import com.serasa.balancas.truck.TruckRepository;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 
 @SpringBootTest
+@ExtendWith(OutputCaptureExtension.class)
 class WeighingPersistenceServiceTest {
 
     private static final String SCALE_ID = "BAL-001";
@@ -150,6 +154,44 @@ class WeighingPersistenceServiceTest {
         TransportTransaction reloaded = transportTransactionRepository.findById(transaction.getId()).orElseThrow();
         assertThat(reloaded.getStatus()).isEqualTo(TransactionStatus.IN_TRANSIT);
         assertThat(reloaded.getEndDate()).isNull();
+    }
+
+    @Test
+    void doesNotLogAnomalyWhenGrossWeightIsWithinPlausibleCapacity(CapturedOutput output) {
+        String plate = uniquePlate();
+        openTransaction(plate, 8500.0);
+
+        // tare 8500, max-payload-multiplier 3.0 -> threshold = 8500 * 4 = 34000; well within range.
+        weighingPersistenceService.persist(StabilizationResult.of(SCALE_ID, plate, 12500.0));
+
+        assertThat(output.getOut()).doesNotContain("Anomaly detected");
+    }
+
+    @Test
+    void logsAnomalyButStillPersistsAndCompletesTransactionWhenGrossWeightFarExceedsCapacity(
+            CapturedOutput output) {
+        String plate = uniquePlate();
+        TransportTransaction transaction = openTransaction(plate, 8500.0);
+
+        // tare 8500, max-payload-multiplier 3.0 -> threshold = 8500 * 4 = 34000; 50000 is far beyond it.
+        weighingPersistenceService.persist(StabilizationResult.of(SCALE_ID, plate, 50000.0));
+
+        assertThat(output.getOut()).contains("Anomaly detected");
+        assertThat(output.getOut()).contains(plate);
+        assertThat(output.getOut()).contains(SCALE_ID);
+        assertThat(output.getOut()).contains("50000");
+        assertThat(output.getOut()).contains("34000");
+
+        WeighingRecord record = weighingRecordRepository.findAll().stream()
+                .filter(r -> r.getTransportTransaction().getId().equals(transaction.getId()))
+                .findFirst()
+                .orElseThrow();
+        assertThat(record.getGrossWeightKg()).isEqualTo(50000.0);
+        assertThat(record.getNetWeightKg()).isEqualTo(41500.0);
+
+        TransportTransaction reloaded = transportTransactionRepository.findById(transaction.getId()).orElseThrow();
+        assertThat(reloaded.getStatus()).isEqualTo(TransactionStatus.COMPLETED);
+        assertThat(reloaded.getEndDate()).isNotNull();
     }
 
     @Test

@@ -13,7 +13,7 @@ spring:
   jpa:
     hibernate:
       ddl-auto: update
-    show-sql: true
+    show-sql: false
     database-platform: org.hibernate.dialect.H2Dialect
     defer-datasource-initialization: true
 
@@ -27,3 +27,6 @@ stabilization:
 
 reports:
   scarcity-threshold: 0.18
+
+anomaly-detection:
+  max-payload-multiplier: 3.0

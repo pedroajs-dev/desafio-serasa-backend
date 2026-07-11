@@ -30,6 +30,11 @@ weighing flow happen end-to-end and watch the resulting reports update live.
   served automatically by Spring Boot at `http://localhost:8080/dashboard.html`
   (same-origin as the API, no CORS setup needed). Polls the five report
   endpoints every 3 seconds and displays them in labeled sections.
+- `scripts/test_anomaly_detection.py` — a separate, standalone script (not
+  part of the guided demo flow above) that deliberately triggers the weight
+  anomaly WARN log added to `WeighingPersistenceService`. See
+  ["Manually verifying anomaly detection"](#manually-verifying-anomaly-detection)
+  below.
 
 ## How to run
 
@@ -141,3 +146,53 @@ out of the box — no manual DB edit needed.
   artifact, so adjusting it doesn't conflict with the "no shortcuts for
   weighing creation" principle — it's a starting condition, not a
   fabricated result.
+
+## Manually verifying anomaly detection
+
+`WeighingPersistenceService.persist()` flags (via a `WARN` log, not a
+block — see the "Detecção de anomalia de peso" section in the main
+[`README.md`](../README.md)) any stabilized `grossWeightKg` that exceeds a
+truck's plausible carrying capacity (`tare × (1 + anomaly-detection.max-
+payload-multiplier)`, configured in `application.yml`). This behavior is
+already covered by an automated test
+(`WeighingPersistenceServiceTest.logsAnomalyButStillPersistsAndCompletes
+TransactionWhenGrossWeightFarExceedsCapacity`), but that test can only
+assert on captured log output inside the JUnit process — it can't show you
+what the WARN actually looks like coming out of a real running app, which
+is useful when reviewing the feature or checking log formatting/visibility
+by eye.
+
+`scripts/test_anomaly_detection.py` exists for that manual check. It:
+
+1. Creates a truck with a known tare (8500kg).
+2. Opens a transaction for that truck.
+3. Reads `anomaly-detection.max-payload-multiplier` directly out of
+   `src/main/resources/application.yml` (rather than hardcoding a guess),
+   computes the threshold (`tare × (1 + multiplier)`), and streams
+   realistic, noisy readings targeting a stabilized weight well above that
+   threshold (`tare + tare × (multiplier + 1)`).
+4. Polls the transaction until it reaches `COMPLETED`, confirming the
+   anomalous weighing is still persisted and the transaction still
+   completes normally (log-and-continue, not a block).
+5. Prints a summary (plate, tare, target weight sent, computed threshold)
+   and an explicit instruction to check the running application's console
+   for an `Anomaly detected` line containing that plate.
+
+Run it the same way as the other scripts, with the app already started:
+
+```
+python scripts/test_anomaly_detection.py
+```
+
+Then check the terminal running `./mvnw spring-boot:run` for a line like:
+
+```
+WARN ... c.s.b.w.WeighingPersistenceService : Anomaly detected: grossWeightKg exceeds plausible
+capacity for plate=ANOM80872 (scaleId=BAL-001): grossWeightKg=42497.63, threshold=34000.0
+(tare=8500.0, maxPayloadMultiplier=3.0)
+```
+
+This script only triggers the condition and reports what it sent — it has
+no access to the running app's stdout, so it cannot itself assert the WARN
+was logged. It's a trigger + manual-check helper, complementary to (not a
+replacement for) the automated assertion in `WeighingPersistenceServiceTest`.
