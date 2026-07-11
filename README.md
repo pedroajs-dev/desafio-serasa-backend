@@ -142,6 +142,15 @@ Alguns exemplos reais e significativos de prompts que geraram decisões de arqui
 
 Lista completa dos prompts mais significativos por épico em [`06-prompts-utilizados.md`](06-prompts-utilizados.md) — não é um transcript literal de cada troca; interações de rotina (aprovações simples, "sim", "continua") foram omitidas, conforme nota no início daquele arquivo.
 
+## Disciplina de processo
+
+Um git pre-commit hook (script versionado em [`scripts/pre-commit.sh`](scripts/pre-commit.sh)) roda a suíte de testes completa (`./mvnw test -q`) automaticamente antes de cada commit, abortando-o se algum teste falhar. Isso substitui o passo 5 do ciclo de IA acima — antes um teste manual via PowerShell — por um gate determinístico e automático: nenhum commit chega ao histórico com o build quebrado. Vale notar que é um gate local de pre-commit, não um pipeline de CI/CD completo (sem checagens em PR, sem execução remota). Para instalar o hook em um clone novo, copie ou faça symlink do script para `.git/hooks/pre-commit`:
+
+```bash
+cp scripts/pre-commit.sh .git/hooks/pre-commit
+chmod +x .git/hooks/pre-commit
+```
+
 ## Sugestões de expansão (não implementadas)
 
 - Migrar a ingestão para Kafka/Redpanda (ver seção de arquitetura acima), permitindo escalar horizontalmente e desacoplar ingestão de processamento.
