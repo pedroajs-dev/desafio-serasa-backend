@@ -33,9 +33,17 @@
 # - Dev typically creates next story after previous one is 'done'
 # - Dev moves story to 'review', then runs code-review
 # - Retrospective is optional at end of each epic
+#
+# STANDALONE FIXES:
+# ==================
+# - Not tied to any epic's original AC. Used for gaps discovered after a story/epic
+#   has already been closed, where folding the fix back into that story would
+#   misrepresent when it was actually found and delivered.
+# - Naming: fix-N, tracked in `standalone_fixes` below with a one-line summary,
+#   detail file path, and how it was discovered.
 
 generated: 2026-07-10
-last_updated: 2026-07-11 (story 6.2 done — code review approved with 2 patches applied)
+last_updated: 2026-07-11 (fix-1 done — rounding gap found via story 6.2 simulator output)
 project: desafio-serasa
 project_key: NOKEY
 tracking_system: file-system
@@ -84,3 +92,11 @@ development_status:
   epic-7: backlog
   7-1-readme-and-delivery-artifacts: backlog
   epic-7-retrospective: optional
+
+standalone_fixes:
+  # ── fix-1: Round persisted weight/cost values to 2 decimal places ──
+  # Discovered 2026-07-11 via Story 6.2's simulator demo output (H2 Console inspection),
+  # not via code review or an original AC. Story 3.2 (WeighingPersistenceService's owner)
+  # was already closed/merged, so this is tracked standalone rather than retrofitted into
+  # Epic 3. Detail: _bmad-output/implementation-artifacts/fix-1-round-persisted-weight-cost-values.md
+  fix-1-round-persisted-weight-cost-values: done

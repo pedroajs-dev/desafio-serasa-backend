@@ -6,6 +6,7 @@ import com.serasa.balancas.margin.MarginService;
 import com.serasa.balancas.transporttransaction.TransportTransactionRepository;
 import com.serasa.balancas.weighingrecord.WeighingRecordRepository;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -42,7 +43,13 @@ public class ReportController {
     public List<CostByGrainResponse> costByGrain(
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime from,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime to) {
-        return transportTransactionRepository.sumLoadCostByGrainType(from, to);
+        // SUM(t.loadCost) aggregates already-rounded per-transaction values in the DB, but
+        // summing many doubles can still reintroduce floating-point residue at the total —
+        // round the aggregate itself before returning it.
+        return transportTransactionRepository.sumLoadCostByGrainType(from, to).stream()
+                .map(r -> new CostByGrainResponse(r.grainTypeId(), r.grainTypeName(),
+                        BigDecimal.valueOf(r.totalLoadCost()).setScale(2, RoundingMode.HALF_UP).doubleValue()))
+                .toList();
     }
 
     @GetMapping("/scale-ranking")
