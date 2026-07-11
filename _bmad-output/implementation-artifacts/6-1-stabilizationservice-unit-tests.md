@@ -1,6 +1,10 @@
+---
+baseline_commit: 0da439667a6642d9fbcab1562739b39da72fe1c2
+---
+
 # Story 6.1: StabilizationService Unit Tests
 
-Status: ready-for-dev
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -18,15 +22,21 @@ so that the core algorithm is validated independently of HTTP and persistence.
 4. Two consecutive sessions on same scale (truck A then truck B) → buffers do not mix.
 5. Single spike in an otherwise stable window → does not break detection if overall stdDev is within threshold.
 6. `alreadyPersisted` lock: subsequent readings with truck still on scale do not trigger a second persistence.
+7. Concurrent readings hammering the SAME `scaleId` from many threads (real thread overlap, not serialized-by-test-order) → no buffer corruption, persistence happens exactly once, and the final stabilized weight is correct.
+8. Concurrent readings hammering DIFFERENT `scaleId`s in parallel (real thread overlap across scales) → no cross-contamination between scales' buffers, no exceptions/deadlocks, each scale stabilizes independently at its own correct weight.
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Add the one missing scenario to the existing `StabilizationServiceTest` (AC: #1)
-  - [ ] New test method, e.g. `continuouslyOscillatingWeightNeverStabilizes`: feed a long run (at least 20+ readings, several full windows' worth) of weight values that alternate wide enough to keep `stdDev` above `properties.stdDevThreshold()` in *every* window, and assert every single `process()` call in the run returns `Optional.empty()` — not just the final one, since a false-positive on an intermediate call would be masked by only checking the last result.
-  - [ ] Pick oscillation amplitude deliberately larger than the amplitude used in `noisyWindowResetsConsecutiveCounterAndDelaysStabilization` (±100 around 1000, e.g. `900/1100` alternating) — that existing test's noisy window is *followed* by stable readings and is not meant to prove indefinite non-stabilization by itself, so don't just reuse its constant.
-- [ ] Task 2: Verify full existing coverage still passes and confirm no gaps remain (AC: #2, #3, #4, #5, #6)
-  - [ ] Re-run `StabilizationServiceTest` — ACs #2–#6 already have passing tests (see Dev Notes mapping below); this task is a verification pass, not new test-writing, unless review of the existing tests during implementation surfaces a real gap.
-  - [ ] Run `./mvnw test -Dtest=StabilizationServiceTest` and confirm all tests (existing + new) pass.
+- [x] Task 1: Add the one missing scenario to the existing `StabilizationServiceTest` (AC: #1)
+  - [x] New test method, e.g. `continuouslyOscillatingWeightNeverStabilizes`: feed a long run (at least 20+ readings, several full windows' worth) of weight values that alternate wide enough to keep `stdDev` above `properties.stdDevThreshold()` in *every* window, and assert every single `process()` call in the run returns `Optional.empty()` — not just the final one, since a false-positive on an intermediate call would be masked by only checking the last result.
+  - [x] Pick oscillation amplitude deliberately larger than the amplitude used in `noisyWindowResetsConsecutiveCounterAndDelaysStabilization` (±100 around 1000, e.g. `900/1100` alternating) — that existing test's noisy window is *followed* by stable readings and is not meant to prove indefinite non-stabilization by itself, so don't just reuse its constant.
+- [x] Task 2: Verify full existing coverage still passes and confirm no gaps remain (AC: #2, #3, #4, #5, #6)
+  - [x] Re-run `StabilizationServiceTest` — ACs #2–#6 already have passing tests (see Dev Notes mapping below); this task is a verification pass, not new test-writing, unless review of the existing tests during implementation surfaces a real gap.
+  - [x] Run `./mvnw test -Dtest=StabilizationServiceTest` and confirm all tests (existing + new) pass.
+- [x] Task 3: Add real concurrency tests exercising `ConcurrentHashMap.compute()`'s atomicity guarantee under actual thread overlap, not just code inspection (AC: #7, #8)
+  - [x] `concurrentReadingsOnSameScaleStabilizeExactlyOnce`: 20 threads via `ExecutorService`, all hammering the same `scaleId` with the same constant weight, released simultaneously via a shared `CountDownLatch` to maximize real overlap rather than accidental serialization by the test itself. Assert exactly one `StabilizationResult` is produced across all threads (not zero, not more than one) and its weight is correct.
+  - [x] `concurrentReadingsOnDifferentScalesStabilizeIndependentlyWithoutCrossContamination`: 10 different `scaleId`s, each driven by its own thread in the same `ExecutorService`/latch setup, each converging to a distinct weight. Assert one result per scale with the correct, non-blended weight, and no exceptions/deadlocks (via a bounded `CountDownLatch.await` timeout).
+  - [x] Ran both new tests 5x locally to check for flakiness under real thread scheduling — no failures observed.
 
 ## Dev Notes
 
@@ -47,6 +57,11 @@ so that the core algorithm is validated independently of HTTP and persistence.
 - **`StabilizationService.process(scaleId, plate, weightKg)` semantics** (`src/main/java/com/serasa/balancas/stabilization/StabilizationService.java`): returns `Optional<StabilizationResult>`, populated only on the exact reading where `consecutiveStableWindows >= properties.consecutiveWindows()` AND `!state.alreadyPersisted` — every other call returns `Optional.empty()`. For the new oscillating-forever test, the assertion must be inside the loop (`assertThat(service.process(...)).isEmpty()` per iteration), not just checked once after the loop — the existing `noisyWindowResetsConsecutiveCounterAndDelaysStabilization` test already demonstrates this per-iteration assertion pattern for its noisy segment (lines 66–68).
 - **No other files need to change.** This story does not touch `StabilizationService.java`, `ScaleState.java`, `StabilizationResult.java`, or `StabilizationProperties.java` — it is test-only.
 - **Not in scope**: Story 6.2 (ESP32 simulator) is a separate story; do not start on it here.
+- **Concurrency tests (AC #7, #8) — scope added after initial story draft.** `StabilizationService.process()` relies on `ConcurrentHashMap.compute()` for atomicity across concurrent scale readings (see `StabilizationService.java` line 21). The original story only covered this via code inspection/sequential tests. Real multi-threaded tests are needed to actually exercise the guarantee under thread contention, not just assume it from reading the code:
+  - Use `ExecutorService` + `CountDownLatch` (all worker threads block on `latch.await()` until released together with `latch.countDown()`) to maximize genuine thread overlap — submitting tasks to an executor alone doesn't guarantee they run concurrently; the shared latch forces it.
+  - Same-scale test: many threads send the *same constant weight* so ordering/interleaving is irrelevant to the outcome (stdDev is always 0 regardless of interleave order) — this isolates the atomicity assertion (exactly one persistence) from any race in *which* reading happens to arrive when.
+  - Cross-scale test: independent scales, independent threads, distinct target weights per scale, to prove `ConcurrentHashMap`'s per-key isolation holds under genuine parallel writes to different keys.
+  - Bound `doneLatch.await(...)` with a timeout and assert it returns `true`, so a deadlock fails the test loudly instead of hanging the build.
 
 ### Project Structure Notes
 
@@ -62,14 +77,29 @@ so that the core algorithm is validated independently of HTTP and persistence.
 - [Source: src/main/java/com/serasa/balancas/stabilization/StabilizationService.java] — `process()` method under test; `markPersistenceFailed()` is unrelated to this story (used by Epic 2's retry path).
 - [Source: git commit cbfaa73] — confirms `StabilizationServiceTest.java` was committed as part of story 3.1, not left uncommitted (superseding the "uncommitted state" caveat noted in story 3.2's dev notes, which predates this commit).
 
+## Change Log
+
+- 2026-07-11: Added `continuouslyOscillatingWeightNeverStabilizes` test covering AC #1; verified ACs #2–#6 already covered. Test-only change, no production code touched.
+- 2026-07-11: Scope expanded to add real concurrency tests (AC #7, #8) — `concurrentReadingsOnSameScaleStabilizeExactlyOnce` and `concurrentReadingsOnDifferentScalesStabilizeIndependentlyWithoutCrossContamination`, using `ExecutorService` + `CountDownLatch` to verify `ConcurrentHashMap.compute()`'s atomicity guarantee under genuine thread overlap rather than by code inspection alone. Test-only change.
+
 ## Dev Agent Record
 
 ### Agent Model Used
 
-{{agent_model_name_version}}
+claude-sonnet-5
 
 ### Debug Log References
 
 ### Completion Notes List
 
+- Added `continuouslyOscillatingWeightNeverStabilizes` test to `StabilizationServiceTest`, feeding 25 alternating 900/1100 readings and asserting `Optional.empty()` on every single `process()` call (AC #1). ACs #2–#6 were re-verified as already covered by existing tests, no gaps found; no production code changes needed.
+- Added two real multi-threaded concurrency tests (AC #7, #8) using `ExecutorService` + `CountDownLatch` to force genuine thread overlap:
+  - `concurrentReadingsOnSameScaleStabilizeExactlyOnce`: 20 threads x 20 readings of the same constant weight against one `scaleId`, released simultaneously — asserts exactly one persisted result with the correct weight, verifying `ConcurrentHashMap.compute()`'s atomicity actually holds under contention rather than by inspection.
+  - `concurrentReadingsOnDifferentScalesStabilizeIndependentlyWithoutCrossContamination`: 10 distinct `scaleId`s, each with its own thread converging to its own target weight, released simultaneously — asserts one correct, non-blended result per scale and no timeouts/deadlocks.
+  - Both new tests were run 5x locally back-to-back to check for flakiness under real thread scheduling; no failures observed.
+- `./mvnw test -Dtest=StabilizationServiceTest`: 11/11 tests pass.
+- Full regression suite (`./mvnw test`): 79/79 tests pass, build success.
+
 ### File List
+
+- src/test/java/com/serasa/balancas/stabilization/StabilizationServiceTest.java (modified)

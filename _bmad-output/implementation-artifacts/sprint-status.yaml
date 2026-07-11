@@ -43,7 +43,7 @@
 #   detail file path, and how it was discovered.
 
 generated: 2026-07-10
-last_updated: 2026-07-11 (fix-1 done — rounding gap found via story 6.2 simulator output)
+last_updated: 2026-07-11 (story 6.1 done)
 project: desafio-serasa
 project_key: NOKEY
 tracking_system: file-system
@@ -84,7 +84,7 @@ development_status:
 
   # ── Epic 6: ESP32 Simulator & Tests ────────────────────────────
   epic-6: in-progress
-  6-1-stabilizationservice-unit-tests: ready-for-dev
+  6-1-stabilizationservice-unit-tests: done
   6-2-esp32-simulator: done
   epic-6-retrospective: optional
 
