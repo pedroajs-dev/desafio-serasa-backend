@@ -1,6 +1,8 @@
 HELP.md
 target/
 .mvn/wrapper/maven-wrapper.jar
+__pycache__/
+*.pyc
 !**/src/main/**/target/
 !**/src/test/**/target/
 

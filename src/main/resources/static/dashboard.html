@@ -157,6 +157,22 @@
     margin-top: 10px;
     text-align: right;
   }
+  .bar-fill {
+    transition: width 400ms ease, background-color 400ms ease;
+  }
+  .bar-fill.stock-ok { background: var(--ok); }
+  .bar-fill.stock-warning { background: #e6b800; }
+  .bar-fill.stock-critical { background: var(--alert-border); }
+  .card {
+    transition: background-color 250ms ease;
+  }
+  .card.card-flash {
+    animation: card-flash-anim 900ms ease-out;
+  }
+  @keyframes card-flash-anim {
+    0% { background-color: rgba(79, 140, 255, 0.35); }
+    100% { background-color: var(--panel); }
+  }
 </style>
 </head>
 <body>
@@ -199,17 +215,29 @@
     <h2>⚠ Alertas de Escassez</h2>
     <div class="card-body">Carregando...</div>
   </div>
+
+  <div class="card" id="card-stock-levels">
+    <h2>📦 Nível de Estoque por Grão</h2>
+    <div class="card-body">Carregando...</div>
+  </div>
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
 <script>
   const POLL_INTERVAL_MS = 3000;
 
+  // Mirrors reports.scarcity-threshold in application.yml — the backend flags a grain
+  // as scarce once its margin reaches this value; the stock bars below reuse it so the
+  // color coding lines up with what /api/reports/scarcity-alerts actually alerts on.
+  const SCARCITY_THRESHOLD = 0.18;
+
   const ENDPOINTS = [
-    { key: 'cost-by-grain', url: '/api/reports/cost-by-grain', render: renderCostByGrain, cardId: 'card-cost-by-grain' },
-    { key: 'scale-ranking', url: '/api/reports/scale-ranking', render: renderScaleRanking, cardId: 'card-scale-ranking' },
-    { key: 'avg-duration', url: '/api/reports/avg-weighing-duration', render: renderAvgDuration, cardId: 'card-avg-duration' },
-    { key: 'avg-margin', url: '/api/reports/avg-margin-by-grain', render: renderAvgMargin, cardId: 'card-avg-margin' },
-    { key: 'scarcity', url: '/api/reports/scarcity-alerts', render: renderScarcity, cardId: 'card-scarcity' },
+    { key: 'cost-by-grain', url: '/api/reports/cost-by-grain', cardId: 'card-cost-by-grain' },
+    { key: 'scale-ranking', url: '/api/reports/scale-ranking', cardId: 'card-scale-ranking' },
+    { key: 'avg-duration', url: '/api/reports/avg-weighing-duration', cardId: 'card-avg-duration' },
+    { key: 'avg-margin', url: '/api/reports/avg-margin-by-grain', cardId: 'card-avg-margin' },
+    { key: 'scarcity', url: '/api/reports/scarcity-alerts', cardId: 'card-scarcity' },
+    { key: 'grain-types', url: '/api/grain-types', cardId: 'card-stock-levels' },
   ];
 
   function fmtNumber(n, decimals) {
@@ -225,20 +253,73 @@
     cardBody(cardId).innerHTML = '<div class="card-error">Nao foi possivel carregar este relatorio — o servico esta disponivel?</div>';
   }
 
+  let costByGrainChart = null;
+
   function renderCostByGrain(data, cardId) {
     const body = cardBody(cardId);
     if (!data.length) {
+      if (costByGrainChart) {
+        costByGrainChart.destroy();
+        costByGrainChart = null;
+      }
       body.innerHTML = '<div class="empty-state">Nenhum dado disponivel</div>';
       return;
     }
-    const max = Math.max(...data.map(d => d.totalLoadCost || 0), 1);
+    if (!body.querySelector('canvas')) {
+      body.innerHTML = '<canvas id="cost-by-grain-canvas" height="180"></canvas>';
+    }
+    const labels = data.map(d => d.grainTypeName);
+    const values = data.map(d => d.totalLoadCost || 0);
+    if (costByGrainChart) {
+      costByGrainChart.data.labels = labels;
+      costByGrainChart.data.datasets[0].data = values;
+      costByGrainChart.update();
+      return;
+    }
+    const canvas = document.getElementById('cost-by-grain-canvas');
+    costByGrainChart = new Chart(canvas.getContext('2d'), {
+      type: 'bar',
+      data: {
+        labels,
+        datasets: [{ label: 'Custo (R$)', data: values, backgroundColor: '#4f8cff', borderRadius: 4 }],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { ticks: { color: '#8b96ac' }, grid: { color: '#263049' } },
+          y: { ticks: { color: '#8b96ac' }, grid: { color: '#263049' }, beginAtZero: true },
+        },
+      },
+    });
+  }
+
+  function stockColorClass(margin) {
+    if (margin === undefined || margin === null) return 'stock-ok';
+    const ratio = margin / SCARCITY_THRESHOLD;
+    if (ratio >= 1) return 'stock-critical';
+    if (ratio >= 0.7) return 'stock-warning';
+    return 'stock-ok';
+  }
+
+  function renderStockLevels(grainTypes, marginRows, cardId) {
+    const body = cardBody(cardId);
+    if (!grainTypes.length) {
+      body.innerHTML = '<div class="empty-state">Nenhum dado disponivel</div>';
+      return;
+    }
+    const marginByGrainId = {};
+    (marginRows || []).forEach(m => { marginByGrainId[m.grainTypeId] = Number(m.margin); });
     let html = '';
-    data.forEach(d => {
-      const pct = Math.max(2, ((d.totalLoadCost || 0) / max) * 100);
+    grainTypes.forEach(g => {
+      const max = g.maxReferenceStock || 1;
+      const pct = Math.max(2, Math.min(100, (g.currentStock / max) * 100));
+      const colorClass = stockColorClass(marginByGrainId[g.id]);
       html += `<div class="bar-row">
-        <div class="bar-label">${escapeHtml(d.grainTypeName)}</div>
-        <div class="bar-track"><div class="bar-fill" style="width:${pct}%"></div></div>
-        <div class="bar-value">R$ ${fmtNumber(d.totalLoadCost)}</div>
+        <div class="bar-label">${escapeHtml(g.name)}</div>
+        <div class="bar-track"><div class="bar-fill ${colorClass}" style="width:${pct}%"></div></div>
+        <div class="bar-value">${fmtNumber(g.currentStock, 0)} / ${fmtNumber(g.maxReferenceStock, 0)} kg</div>
       </div>`;
     });
     body.innerHTML = html;
@@ -315,17 +396,54 @@
       const res = await fetch(endpoint.url, { cache: 'no-store' });
       if (!res.ok) throw new Error('HTTP ' + res.status);
       const data = await res.json();
-      endpoint.render(data, endpoint.cardId);
-      return true;
+      return { key: endpoint.key, cardId: endpoint.cardId, ok: true, data };
     } catch (e) {
-      showCardError(endpoint.cardId);
-      return false;
+      return { key: endpoint.key, cardId: endpoint.cardId, ok: false, data: null };
     }
   }
 
+  const lastRenderedJson = {};
+
+  function flashCardIfChanged(cardId, data) {
+    const json = JSON.stringify(data);
+    const previous = lastRenderedJson[cardId];
+    lastRenderedJson[cardId] = json;
+    if (previous === undefined || previous === json) return;
+    const card = document.getElementById(cardId);
+    card.classList.remove('card-flash');
+    void card.offsetWidth;
+    card.classList.add('card-flash');
+  }
+
+  function renderResult(result, renderFn) {
+    if (!result.ok) {
+      showCardError(result.cardId);
+      return;
+    }
+    renderFn(result.data);
+    flashCardIfChanged(result.cardId, result.data);
+  }
+
   async function pollAll() {
-    const results = await Promise.allSettled(ENDPOINTS.map(fetchOne));
-    const allFailed = results.every(r => r.status === 'fulfilled' && r.value === false);
+    const settled = await Promise.allSettled(ENDPOINTS.map(fetchOne));
+    const byKey = {};
+    settled.forEach(r => { byKey[r.value.key] = r.value; });
+
+    renderResult(byKey['cost-by-grain'], (data) => renderCostByGrain(data, 'card-cost-by-grain'));
+    renderResult(byKey['scale-ranking'], (data) => renderScaleRanking(data, 'card-scale-ranking'));
+    renderResult(byKey['avg-duration'], (data) => renderAvgDuration(data, 'card-avg-duration'));
+    renderResult(byKey['avg-margin'], (data) => renderAvgMargin(data, 'card-avg-margin'));
+    renderResult(byKey['scarcity'], (data) => renderScarcity(data, 'card-scarcity'));
+
+    const grainTypesResult = byKey['grain-types'];
+    if (grainTypesResult.ok && byKey['avg-margin'].ok) {
+      renderStockLevels(grainTypesResult.data, byKey['avg-margin'].data, 'card-stock-levels');
+      flashCardIfChanged('card-stock-levels', [grainTypesResult.data, byKey['avg-margin'].data]);
+    } else {
+      showCardError('card-stock-levels');
+    }
+
+    const allFailed = Object.values(byKey).every(r => !r.ok);
     document.getElementById('global-banner').style.display = allFailed ? 'block' : 'none';
     document.getElementById('last-refresh').textContent =
       'Ultima atualizacao: ' + new Date().toLocaleTimeString('pt-BR');

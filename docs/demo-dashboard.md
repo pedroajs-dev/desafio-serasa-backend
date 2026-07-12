@@ -13,19 +13,36 @@ weighing flow happen end-to-end and watch the resulting reports update live.
 ## What's included
 
 - `scripts/demo_lib.py` — shared HTTP helpers (health check, create truck,
-  open transaction, stream readings with decaying noise, send departure
-  readings, poll for completion) used by both scripts below. Not meant to
-  be run directly.
+  create branch/grain type/scale, open transaction, stream readings with
+  decaying noise, send departure readings, poll for completion) used by
+  both scripts below. Not meant to be run directly.
 - `scripts/demo.py` — creates one truck, opens a transaction, streams
   weighing readings with decaying noise over ~10 seconds (mirroring
   `ScaleSimulator`'s realistic ramp), polls the transaction until it
-  completes, prints a summary, and opens the dashboard in your browser.
-- `scripts/seed_demo_data.py` — runs 10 weighing cycles across all 3
-  seeded grain types and both branches/scales (faster ~1.6s ramp per
-  cycle, still passing through the same noise-decay and stabilization
-  window logic, just compressed) so the dashboard has varied, realistic
-  data to show instead of a single data point. Intended to be run once
-  against a freshly started app.
+  completes, and prints a summary. Pass `--repeat N` to run N such cycles
+  back to back in one invocation (default: 1) — handy for watching the
+  dashboard's cards change a few times in a row. Opens the dashboard in
+  your browser once per invocation, right before the cycles start (not
+  once per cycle) so you're watching from cycle 1 onward; pass
+  `--no-open-browser` to suppress that for repeated manual testing.
+- `scripts/seed_demo_data.py` — first creates one extra branch ("Filial
+  Primavera do Leste"), grain type ("Algodao"), and scale (`BAL-003`) via
+  the real HTTP endpoints (`POST /api/branches`, `/api/grain-types`,
+  `/api/scales` — same pattern as truck creation, never a direct DB write;
+  re-running the script reuses these instead of duplicating them), then
+  runs weighing cycles across all 3 branches/scales and 4 grain types
+  (faster ~1.6s ramp per cycle, still passing through the same
+  noise-decay and stabilization window logic, just compressed) so the
+  dashboard has varied, realistic data to show instead of a single data
+  point. Pass `--count N` to control how many cycles run (default: 20)
+  and `--interval SECONDS` to control the pause between them (default:
+  1.2s) — the defaults make a full run take roughly a minute, long enough
+  to comfortably watch several 3s auto-poll refreshes land while the
+  script is still running. Intended to be run once against a freshly
+  started app. Opens the dashboard in your browser once, right after the
+  branch/grain-type/scale setup and before the first cycle starts, so you
+  can watch it live from the beginning; pass `--no-open-browser` to
+  suppress that.
 - `src/main/resources/static/dashboard.html` — a single static HTML page,
   served automatically by Spring Boot at `http://localhost:8080/dashboard.html`
   (same-origin as the API, no CORS setup needed). Polls the five report
@@ -49,21 +66,33 @@ weighing flow happen end-to-end and watch the resulting reports update live.
 
    ```
    python scripts/seed_demo_data.py
+   python scripts/seed_demo_data.py --count 30 --interval 1.5
    ```
 
+   This opens the dashboard in your default browser automatically before
+   the weighing cycles start — no need to open it yourself first, and you
+   won't miss the early cycles. The default run takes roughly a minute,
+   so you can watch the cards update several times live before it's done;
+   pass `--count`/`--interval` to make it longer or shorter.
+
 3. Optionally, run the single-truck demo for one more live example (can be
-   run multiple times against the same app instance):
+   run multiple times against the same app instance), or pass `--repeat`
+   to run several cycles back to back so you can watch the dashboard
+   change a few times in a row:
 
    ```
    python scripts/demo.py
+   python scripts/demo.py --repeat 4
    ```
 
    (On some systems the Python 3 executable is `python3`:
    `python3 scripts/seed_demo_data.py` / `python3 scripts/demo.py`)
 
-   Either script opens the dashboard automatically after finishing, so you
-   only need to open it manually if you skip both or the browser doesn't
-   launch.
+   Each invocation opens the dashboard once, before its cycles start —
+   `--repeat 4` still opens exactly one tab, not four. If you're
+   re-running either script repeatedly during manual testing and don't
+   want a new tab piling up each time, pass `--no-open-browser`; the
+   dashboard URL is still printed either way as a fallback.
 
 ## What to expect
 
@@ -71,56 +100,96 @@ Both scripts check that the app is reachable at `http://localhost:8080`
 (via `GET /api/branches`) first, and exit with a clear message if it isn't
 running yet.
 
-`seed_demo_data.py` prints one concise line per cycle:
+`seed_demo_data.py` first reports the extra branch/grain type/scale it created
+(or reused, on a second run), then prints one concise line per cycle:
 
 ```
 Checking for application at http://localhost:8080 ...
-Application detected. Seeding 10 weighing cycles...
+Application detected.
 
-  [ 1/10] plate=SEED7836050    grain=Soja   branch=Sorriso       scale=BAL-001  status=COMPLETED
-  [ 2/10] plate=SEED7864121    grain=Milho  branch=Sorriso       scale=BAL-001  status=COMPLETED
+Created branch: name='Filial Primavera do Leste', id=3
+Created grain type: name='Algodao', id=4
+Created scale: id=BAL-003, branch_id=3
+
+Dashboard: http://localhost:8080/dashboard.html
+It auto-refreshes every 3s — leave the tab open to watch the seeded data land live.
+
+Seeding 20 weighing cycles (1.2s apart)...
+
+  [ 1/20] plate=SEED792980     grain=Soja     branch=Sorriso         scale=BAL-001  status=COMPLETED
+  [ 2/20] plate=SEED833041     grain=Milho    branch=Sorriso         scale=BAL-001  status=COMPLETED
   ...
-  [10/10] plate=SEED8072729    grain=Soja   branch=Rondonopolis  scale=BAL-002  status=COMPLETED
+  [ 7/20] plate=SEED1030996    grain=Algodao  branch=PrimaveraLeste  scale=BAL-003  status=COMPLETED
+  ...
+  [20/20] plate=SEED15388119   grain=Sorgo    branch=Rondonopolis    scale=BAL-002  status=COMPLETED
 
 --- Seed Summary ---
-Weighings completed: 10/10
-  Milho: 3
-  Soja: 4
-  Sorgo: 3
-
-Opening dashboard at http://localhost:8080/dashboard.html — if it doesn't
-open automatically, open that URL manually.
+Weighings completed: 20/20
+  Algodao: 2
+  Milho: 6
+  Soja: 6
+  Sorgo: 6
 ```
 
-`demo.py` narrates a single truck's flow in more detail:
+(the dashboard opens in your default browser right after the "Dashboard:"
+line above — before the first cycle runs, not after the last one — unless
+`--no-open-browser` was passed)
+
+Re-running the script skips creating the extra branch/grain type/scale a
+second time:
+
+```
+Reusing existing branch: name='Filial Primavera do Leste', id=3
+Reusing existing grain type: name='Algodao', id=4
+Reusing existing scale: id=BAL-003, branch_id=3
+```
+
+`demo.py --repeat 4` prints one line per cycle:
 
 ```
 Checking for application at http://localhost:8080 ...
-Application detected. Starting demo flow...
+Application detected.
 
-Created truck: plate=SIM12345, id=7
-Opened transaction: id=12
-Sending weighing readings...
-  sent 100 readings (final weight ~32001.34 kg)
-Simulating truck departure (resetting scale for next run)...
-Polling transaction for completion...
+Dashboard: http://localhost:8080/dashboard.html
+It auto-refreshes every 3s — leave the tab open to watch cycles land live.
+
+Running 4 weighing cycle(s)...
+
+[cycle 1/4] plate=SIM656691      status=COMPLETED  readings=101  final_weight~32000.58kg  load_cost=R$ 4229.99
+[cycle 2/4] plate=SIM788352      status=COMPLETED  readings=101  final_weight~32001.04kg  load_cost=R$ 4229.91
+[cycle 3/4] plate=SIM916643      status=COMPLETED  readings=101  final_weight~32001.67kg  load_cost=R$ 4230.05
+[cycle 4/4] plate=SIM45544       status=COMPLETED  readings=101  final_weight~32001.80kg  load_cost=R$ 4230.10
 
 --- Demo Summary ---
-Truck plate:   SIM12345
-Status:        COMPLETED
-Net weight:    23501.34 kg
-Load cost:     R$ 4230.24
-
-Opening dashboard at http://localhost:8080/dashboard.html — if it doesn't
-open automatically, open that URL manually.
+Cycles completed: 4/4
 ```
 
-After either script finishes, it opens your default web browser to the
-dashboard, which shows live-updating cards for cost by grain, scale
-ranking, average weighing duration by branch, average margin by grain, and
-scarcity alerts (highlighted in red/orange when present). With the seed
-data in place, the scarcity-alerts card shows an active alert for Milho
-out of the box — no manual DB edit needed.
+(the dashboard opens right after the "Dashboard:" line above — exactly
+once, before cycle 1, not once per cycle, even with `--repeat 4` — unless
+`--no-open-browser` was passed)
+
+By default each script opens the dashboard in your browser once per
+invocation, right before its cycles start (not after they finish), so you
+can watch the very first cycle land live instead of missing it. The URL
+is printed either way as a fallback (headless environment, no default
+browser configured, etc.). Pass
+`--no-open-browser` to suppress the auto-open, e.g. when re-running either
+script repeatedly during manual testing and you don't want a new tab each
+time. The dashboard shows live-updating cards for cost by grain (a
+Chart.js bar chart), scale ranking, average weighing duration by branch,
+average margin by grain, scarcity alerts (highlighted in red/orange when
+present), and a stock-level card with a progress bar per grain type
+(green/yellow/red based on how close that grain's margin is to
+`reports.scarcity-threshold`, so grains approaching scarcity are visible
+before they cross the threshold, not just the ones already in the
+alerts card). After `seed_demo_data.py` runs, these cards show all 4
+grain types (Soja, Milho, Sorgo, and the seeded Algodao), all 3 branches,
+and all 3 scales — with the scarcity-alerts card still showing only Milho
+out of the box (Algodao's stock/margin were chosen to stay comfortably
+under `reports.scarcity-threshold`, so it doesn't trigger a second alert
+unless you edit its `currentStock` down yourself). No manual DB edit
+needed either way. Any card whose values changed since the previous poll
+briefly flashes so it's obvious the dashboard is live rather than static.
 
 ## Notes
 
