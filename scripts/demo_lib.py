@@ -46,6 +46,42 @@ def create_truck(plate, tare_kg):
     return truck["id"]
 
 
+def list_branches():
+    return http_request("GET", "/api/branches")
+
+
+def create_branch(name, location):
+    branch = http_request("POST", "/api/branches", {"name": name, "location": location})
+    return branch["id"]
+
+
+def list_grain_types():
+    return http_request("GET", "/api/grain-types")
+
+
+def create_grain_type(name, purchase_price_per_ton, max_reference_stock, current_stock):
+    grain_type = http_request("POST", "/api/grain-types", {
+        "name": name,
+        "purchasePricePerTon": purchase_price_per_ton,
+        "maxReferenceStock": max_reference_stock,
+        "currentStock": current_stock,
+    })
+    return grain_type["id"]
+
+
+def list_scales():
+    return http_request("GET", "/api/scales")
+
+
+def create_scale(scale_id, branch_id, api_key):
+    scale = http_request("POST", "/api/scales", {
+        "id": scale_id,
+        "branchId": branch_id,
+        "apiKey": api_key,
+    })
+    return scale["id"]
+
+
 def open_transaction(truck_id, grain_type_id, branch_id):
     tx = http_request("POST", "/api/transactions", {
         "truckId": truck_id,

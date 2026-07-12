@@ -22,9 +22,19 @@ Solução para o desafio técnico backend: ingestão, estabilização e armazena
 
 Pré-requisito: Java 21. Nenhum outro setup externo é necessário (sem Docker, sem containers).
 
+Para uma demonstração guiada com dados variados e um dashboard visual:
+
+1. Suba a aplicação (se ainda não estiver rodando):
 ```bash
-./mvnw spring-boot:run
+   ./mvnw spring-boot:run
 ```
+2. Em outro terminal, rode:
+```bash
+   python scripts/seed_demo_data.py
+```
+   O navegador abre automaticamente no dashboard antes dos ciclos começarem, e os cards atualizam ao vivo conforme as pesagens completam — balanças, tipos de grão e filiais variados, incluindo o alerta de escassez do Milho já ativo.
+
+Veja [`docs/demo-dashboard.md`](docs/demo-dashboard.md) para mais detalhes, opções (`--count`, `--interval`, `--no-open-browser`), o script complementar `scripts/demo.py` (um ciclo único e detalhado), e `scripts/test_anomaly_detection.py` (dispara manualmente o WARN de detecção de anomalia — ver seção "Detecção de anomalia de peso" abaixo).
 
 A aplicação sobe em `http://localhost:8080`.
 
@@ -33,8 +43,6 @@ A aplicação sobe em `http://localhost:8080`.
   Útil para inspecionar as tabelas (`grain_type`, `truck`, `scale`, `transport_transaction`, `weighing_record`, etc.) durante os testes.
 - **Swagger UI**: `http://localhost:8080/swagger-ui.html` — documentação OpenAPI gerada automaticamente pelo `springdoc-openapi` a partir dos controllers existentes.
 - Dados de exemplo (filiais, tipos de grão, caminhões, balanças) são carregados automaticamente no boot via `src/main/resources/data.sql`.
-
-Para uma demonstração guiada com dados variados e um dashboard visual, veja [`docs/demo-dashboard.md`](docs/demo-dashboard.md) — inclui scripts opcionais (`scripts/seed_demo_data.py`, `scripts/demo.py`) que exercitam o fluxo real de ponta a ponta via HTTP, além de `scripts/test_anomaly_detection.py`, que dispara manualmente o WARN de detecção de anomalia (ver seção "Detecção de anomalia de peso" abaixo e ["Manually verifying anomaly detection"](docs/demo-dashboard.md#manually-verifying-anomaly-detection) no doc de demo).
 
 ## Endpoints
 
