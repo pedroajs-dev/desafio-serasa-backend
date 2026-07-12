@@ -14,21 +14,20 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/branches")
 public class BranchController {
 
-    private final BranchRepository branchRepository;
+    private final BranchService branchService;
 
-    public BranchController(BranchRepository branchRepository) {
-        this.branchRepository = branchRepository;
+    public BranchController(BranchService branchService) {
+        this.branchService = branchService;
     }
 
     @PostMapping
     public ResponseEntity<Branch> create(@Valid @RequestBody Branch branch) {
-        branch.setId(null);
-        Branch saved = branchRepository.save(branch);
+        Branch saved = branchService.create(branch);
         return ResponseEntity.created(URI.create("/api/branches/" + saved.getId())).body(saved);
     }
 
     @GetMapping
     public List<Branch> findAll() {
-        return branchRepository.findAll();
+        return branchService.findAll();
     }
 }

@@ -1,5 +1,17 @@
 # Deferred Work
 
+## Deferred from: quick-dev review of spec-duplicate-cadastro-validation (2026-07-12)
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-duplicate-cadastro-validation.md`
+  summary: Natural-key uniqueness (truck plate, branch/grain-type name) is case- and whitespace-sensitive — "Soja" vs "soja" vs " Soja " are treated as distinct.
+  evidence: `existsBy...` derives an exact-match `=` query and H2 is case-sensitive with no trimming; real-world duplicates (lowercase plate resend, copy-paste trailing space) bypass the guard and the DB unique index. Deferred because case-folding/trim is a product-semantics decision with multiple valid readings, not clearly implied by the approved intent.
+- source_spec: `_bmad-output/implementation-artifacts/spec-duplicate-cadastro-validation.md`
+  summary: Truck/Branch/GrainType unique constraints rely on `ddl-auto: update` rather than a managed migration.
+  evidence: Hibernate `update` reliably creates the constraint on a fresh in-memory H2 table but is known not to reliably add unique constraints to a pre-existing/managed schema; if this ever runs against persistent Postgres the DB backstop could silently be absent. Pre-existing whole-project concern (aligns with the H2-not-Postgres trade-off already documented in the README); belongs to a future migrations effort, not this fix.
+- source_spec: `_bmad-output/implementation-artifacts/spec-duplicate-cadastro-validation.md`
+  summary: No automated concurrency regression test for the duplicate-create race.
+  evidence: The new tests cover only the sequential POST-then-POST path. The TOCTOU race is now backstopped by DB unique constraints + a `DataIntegrityViolationException`->409 handler (added in this change), but a dedicated multi-threaded test would be timing-dependent/flaky against the shared H2 test DB. The constraint is the real guarantee; an explicit race test is deferred.
+
 ## Deferred from: code review of story-3.2 (2026-07-10)
 
 - Concurrent stabilized readings for the same plate could in theory double-process the same open transaction in `WeighingPersistenceService.persist()` (no locking on the `TransportTransaction` lookup). Accepted as risk for now: story 3.1's `ConcurrentHashMap.compute()` already serializes readings per `scaleId`, so triggering this would require two different scales processing the same plate concurrently — physically implausible (a truck can't be on two scales at once). No real call site exists yet (Epic 2 not built). Revisit once the ingestion endpoint (Epic 2) is wired.

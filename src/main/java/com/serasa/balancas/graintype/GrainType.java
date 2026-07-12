@@ -1,5 +1,6 @@
 package com.serasa.balancas.graintype;
 
+import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
@@ -17,6 +18,7 @@ public class GrainType {
     private Long id;
 
     @NotBlank
+    @Column(unique = true)
     private String name;
 
     @NotNull

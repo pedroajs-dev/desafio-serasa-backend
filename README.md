@@ -48,11 +48,11 @@ A aplicação sobe em `http://localhost:8080`.
 
 | Método | Caminho | Descrição |
 |---|---|---|
-| POST | `/api/branches` | Cria filial |
+| POST | `/api/branches` | Cria filial; rejeita nome duplicado (409 Conflict) |
 | GET | `/api/branches` | Lista filiais |
-| POST | `/api/grain-types` | Cria tipo de grão |
+| POST | `/api/grain-types` | Cria tipo de grão; rejeita nome duplicado (409 Conflict) |
 | GET | `/api/grain-types` | Lista tipos de grão |
-| POST | `/api/trucks` | Cria caminhão (placa + tara) |
+| POST | `/api/trucks` | Cria caminhão (placa + tara); rejeita placa duplicada (409 Conflict) |
 | GET | `/api/trucks/{id}` | Busca caminhão por id |
 | POST | `/api/scales` | Cria balança (vinculada a uma filial, com apiKey) |
 | GET | `/api/scales` | Lista balanças |

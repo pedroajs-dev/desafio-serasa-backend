@@ -1,6 +1,7 @@
 package com.serasa.balancas.branch;
 
 import static org.hamcrest.Matchers.greaterThanOrEqualTo;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -23,6 +24,9 @@ class BranchControllerTest {
 
     @Autowired
     private ObjectMapper objectMapper;
+
+    @Autowired
+    private BranchRepository branchRepository;
 
     @Test
     void createsAndPersistsBranch() throws Exception {
@@ -52,6 +56,30 @@ class BranchControllerTest {
         mockMvc.perform(get("/api/branches"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()", greaterThanOrEqualTo(2)));
+    }
+
+    @Test
+    void rejectsDuplicateNameWithConflict() throws Exception {
+        Branch branch = new Branch("Filial Duplicada", "Cuiaba - MT");
+        String payload = objectMapper.writeValueAsString(branch);
+
+        mockMvc.perform(post("/api/branches")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(payload))
+                .andExpect(status().isCreated());
+
+        mockMvc.perform(post("/api/branches")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(payload))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.status").value(409))
+                .andExpect(jsonPath("$.message")
+                        .value("Branch with name Filial Duplicada already exists"));
+
+        long count = branchRepository.findAll().stream()
+                .filter(b -> "Filial Duplicada".equals(b.getName()))
+                .count();
+        assertEquals(1, count);
     }
 
     @Test
