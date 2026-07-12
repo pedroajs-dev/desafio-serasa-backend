@@ -14,21 +14,20 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/grain-types")
 public class GrainTypeController {
 
-    private final GrainTypeRepository grainTypeRepository;
+    private final GrainTypeService grainTypeService;
 
-    public GrainTypeController(GrainTypeRepository grainTypeRepository) {
-        this.grainTypeRepository = grainTypeRepository;
+    public GrainTypeController(GrainTypeService grainTypeService) {
+        this.grainTypeService = grainTypeService;
     }
 
     @PostMapping
     public ResponseEntity<GrainType> create(@Valid @RequestBody GrainType grainType) {
-        grainType.setId(null);
-        GrainType saved = grainTypeRepository.save(grainType);
+        GrainType saved = grainTypeService.create(grainType);
         return ResponseEntity.created(URI.create("/api/grain-types/" + saved.getId())).body(saved);
     }
 
     @GetMapping
     public List<GrainType> findAll() {
-        return grainTypeRepository.findAll();
+        return grainTypeService.findAll();
     }
 }

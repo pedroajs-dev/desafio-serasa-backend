@@ -1,6 +1,5 @@
 package com.serasa.balancas.truck;
 
-import com.serasa.balancas.common.exception.ResourceNotFoundException;
 import jakarta.validation.Valid;
 import java.net.URI;
 import org.springframework.http.ResponseEntity;
@@ -15,23 +14,20 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/trucks")
 public class TruckController {
 
-    private final TruckRepository truckRepository;
+    private final TruckService truckService;
 
-    public TruckController(TruckRepository truckRepository) {
-        this.truckRepository = truckRepository;
+    public TruckController(TruckService truckService) {
+        this.truckService = truckService;
     }
 
     @PostMapping
     public ResponseEntity<Truck> create(@Valid @RequestBody Truck truck) {
-        truck.setId(null);
-        Truck saved = truckRepository.save(truck);
+        Truck saved = truckService.create(truck);
         return ResponseEntity.created(URI.create("/api/trucks/" + saved.getId())).body(saved);
     }
 
     @GetMapping("/{id}")
     public ResponseEntity<Truck> findById(@PathVariable Long id) {
-        Truck truck = truckRepository.findById(id)
-                .orElseThrow(() -> new ResourceNotFoundException("Truck not found with id " + id));
-        return ResponseEntity.ok(truck);
+        return ResponseEntity.ok(truckService.findById(id));
     }
 }

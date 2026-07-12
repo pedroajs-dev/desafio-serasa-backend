@@ -1,5 +1,6 @@
 package com.serasa.balancas.branch;
 
+import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
@@ -14,6 +15,7 @@ public class Branch {
     private Long id;
 
     @NotBlank
+    @Column(unique = true)
     private String name;
 
     private String location;

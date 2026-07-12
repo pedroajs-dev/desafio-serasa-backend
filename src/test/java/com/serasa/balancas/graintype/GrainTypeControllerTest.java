@@ -1,6 +1,7 @@
 package com.serasa.balancas.graintype;
 
 import static org.hamcrest.Matchers.greaterThanOrEqualTo;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -24,6 +25,9 @@ class GrainTypeControllerTest {
 
     @Autowired
     private ObjectMapper objectMapper;
+
+    @Autowired
+    private GrainTypeRepository grainTypeRepository;
 
     @Test
     void createsAndPersistsGrainType() throws Exception {
@@ -55,6 +59,30 @@ class GrainTypeControllerTest {
         mockMvc.perform(get("/api/grain-types"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()", greaterThanOrEqualTo(3)));
+    }
+
+    @Test
+    void rejectsDuplicateNameWithConflict() throws Exception {
+        GrainType grainType = new GrainType("Cevada", new BigDecimal("180.00"), 12000.0, 3000.0);
+        String payload = objectMapper.writeValueAsString(grainType);
+
+        mockMvc.perform(post("/api/grain-types")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(payload))
+                .andExpect(status().isCreated());
+
+        mockMvc.perform(post("/api/grain-types")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(payload))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.status").value(409))
+                .andExpect(jsonPath("$.message")
+                        .value("GrainType with name Cevada already exists"));
+
+        long count = grainTypeRepository.findAll().stream()
+                .filter(g -> "Cevada".equals(g.getName()))
+                .count();
+        assertEquals(1, count);
     }
 
     @Test

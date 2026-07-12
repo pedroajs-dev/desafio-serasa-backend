@@ -1,6 +1,7 @@
 package com.serasa.balancas.truck;
 
 import static org.hamcrest.Matchers.not;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -23,6 +24,9 @@ class TruckControllerTest {
 
     @Autowired
     private ObjectMapper objectMapper;
+
+    @Autowired
+    private TruckRepository truckRepository;
 
     @Test
     void createsAndPersistsTruck() throws Exception {
@@ -78,6 +82,30 @@ class TruckControllerTest {
     void getByIdReturns404WhenNotFound() throws Exception {
         mockMvc.perform(get("/api/trucks/999999"))
                 .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void rejectsDuplicateLicensePlateWithConflict() throws Exception {
+        Truck truck = new Truck("DUP1L23", 8500.0);
+        String payload = objectMapper.writeValueAsString(truck);
+
+        mockMvc.perform(post("/api/trucks")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(payload))
+                .andExpect(status().isCreated());
+
+        mockMvc.perform(post("/api/trucks")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(payload))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.status").value(409))
+                .andExpect(jsonPath("$.message")
+                        .value("Truck with license plate DUP1L23 already exists"));
+
+        long count = truckRepository.findAll().stream()
+                .filter(t -> "DUP1L23".equals(t.getLicensePlate()))
+                .count();
+        assertEquals(1, count);
     }
 
     @Test
