@@ -1,5 +1,7 @@
 package com.serasa.balancas.weighingrecord;
 
+import com.serasa.balancas.graintype.GrainType;
+import com.serasa.balancas.graintype.GrainTypeRepository;
 import com.serasa.balancas.scale.Scale;
 import com.serasa.balancas.scale.ScaleRepository;
 import com.serasa.balancas.stabilization.StabilizationResult;
@@ -25,14 +27,17 @@ public class WeighingPersistenceService implements WeighingPersistencePort {
     private final TransportTransactionRepository transportTransactionRepository;
     private final WeighingRecordRepository weighingRecordRepository;
     private final ScaleRepository scaleRepository;
+    private final GrainTypeRepository grainTypeRepository;
     private final double maxPayloadMultiplier;
 
     public WeighingPersistenceService(TransportTransactionRepository transportTransactionRepository,
             WeighingRecordRepository weighingRecordRepository, ScaleRepository scaleRepository,
+            GrainTypeRepository grainTypeRepository,
             @Value("${anomaly-detection.max-payload-multiplier}") double maxPayloadMultiplier) {
         this.transportTransactionRepository = transportTransactionRepository;
         this.weighingRecordRepository = weighingRecordRepository;
         this.scaleRepository = scaleRepository;
+        this.grainTypeRepository = grainTypeRepository;
         this.maxPayloadMultiplier = maxPayloadMultiplier;
     }
 
@@ -116,6 +121,15 @@ public class WeighingPersistenceService implements WeighingPersistencePort {
         transaction.setStatus(TransactionStatus.COMPLETED);
         transaction.setEndDate(LocalDateTime.now());
         transportTransactionRepository.save(transaction);
+
+        // Real grain physically arrived at the dock: increase the available stock ("quantidade
+        // disponível na doca") by the same net weight persisted above, so the inversely-proportional
+        // sale margin (MarginService) reflects deliveries over the life of the running instance.
+        // Only reached on the completion path, after every guard — CANCELLED / dropped readings never
+        // get here, and the increment shares this method's @Transactional boundary.
+        GrainType grainType = transaction.getGrainType();
+        grainType.setCurrentStock(grainType.getCurrentStock() + roundedNetWeightKg);
+        grainTypeRepository.save(grainType);
     }
 
     private static double round2(double value) {

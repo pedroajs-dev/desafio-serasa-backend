@@ -12,6 +12,7 @@ import com.serasa.balancas.transporttransaction.TransportTransaction;
 import com.serasa.balancas.transporttransaction.TransportTransactionRepository;
 import com.serasa.balancas.truck.Truck;
 import com.serasa.balancas.truck.TruckRepository;
+import java.math.BigDecimal;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -49,10 +50,21 @@ class WeighingPersistenceServiceTest {
     }
 
     private TransportTransaction openTransaction(String plate, double tare) {
-        Truck truck = truckRepository.save(new Truck(plate, tare));
         GrainType grainType = grainTypeRepository.findById(1L).orElseThrow();
+        return openTransaction(plate, tare, grainType);
+    }
+
+    private TransportTransaction openTransaction(String plate, double tare, GrainType grainType) {
+        Truck truck = truckRepository.save(new Truck(plate, tare));
         Branch branch = branchRepository.findById(1L).orElseThrow();
         return transportTransactionRepository.save(new TransportTransaction(truck, grainType, branch));
+    }
+
+    // Fresh grain type per test keeps currentStock assertions isolated from the class-shared H2 DB,
+    // where other tests also complete weighings against the seeded grains.
+    private GrainType freshGrainType(double initialStock) {
+        return grainTypeRepository.save(
+                new GrainType("Grain-" + UUID.randomUUID(), BigDecimal.valueOf(100.00), 40000.0, initialStock));
     }
 
     @Test
@@ -207,5 +219,78 @@ class WeighingPersistenceServiceTest {
         TransportTransaction reloaded = transportTransactionRepository.findById(transaction.getId()).orElseThrow();
         assertThat(reloaded.getStatus()).isEqualTo(TransactionStatus.IN_TRANSIT);
         assertThat(reloaded.getEndDate()).isNull();
+    }
+
+    @Test
+    void increasesGrainTypeCurrentStockByExactlyNetWeightWhenWeighingCompletes() {
+        GrainType grainType = freshGrainType(2000.0);
+        double initialStock = grainType.getCurrentStock();
+        String plate = uniquePlate();
+        TransportTransaction transaction = openTransaction(plate, 8500.0, grainType);
+
+        // gross 12500, tare 8500 -> netWeightKg = 4000
+        weighingPersistenceService.persist(StabilizationResult.of(SCALE_ID, plate, 12500.0));
+
+        WeighingRecord record = weighingRecordRepository.findAll().stream()
+                .filter(r -> r.getTransportTransaction().getId().equals(transaction.getId()))
+                .findFirst()
+                .orElseThrow();
+        assertThat(record.getNetWeightKg()).isEqualTo(4000.0);
+
+        GrainType reloaded = grainTypeRepository.findById(grainType.getId()).orElseThrow();
+        assertThat(reloaded.getCurrentStock()).isEqualTo(initialStock + 4000.0);
+        // The stock delta equals exactly the net weight persisted on the record.
+        assertThat(reloaded.getCurrentStock() - initialStock).isEqualTo(record.getNetWeightKg());
+    }
+
+    @Test
+    void doesNotChangeGrainTypeCurrentStockWhenTransactionIsCancelled() {
+        GrainType grainType = freshGrainType(2000.0);
+        double stockBefore = grainType.getCurrentStock();
+        String plate = uniquePlate();
+        TransportTransaction transaction = openTransaction(plate, 8500.0, grainType);
+        // CANCELLED is TERMINAL, so persist() finds no open transaction and returns before any stock change.
+        transaction.setStatus(TransactionStatus.CANCELLED);
+        transportTransactionRepository.save(transaction);
+
+        weighingPersistenceService.persist(StabilizationResult.of(SCALE_ID, plate, 12500.0));
+
+        GrainType reloaded = grainTypeRepository.findById(grainType.getId()).orElseThrow();
+        assertThat(reloaded.getCurrentStock()).isEqualTo(stockBefore);
+    }
+
+    @Test
+    void doesNotChangeGrainTypeCurrentStockWhenNetWeightIsNonPositive() {
+        GrainType grainType = freshGrainType(2000.0);
+        double stockBefore = grainType.getCurrentStock();
+        String plate = uniquePlate();
+        openTransaction(plate, 8500.0, grainType);
+
+        // gross 5000 < tare 8500 -> netWeightKg = -3500, dropped before any stock change.
+        weighingPersistenceService.persist(StabilizationResult.of(SCALE_ID, plate, 5000.0));
+
+        GrainType reloaded = grainTypeRepository.findById(grainType.getId()).orElseThrow();
+        assertThat(reloaded.getCurrentStock()).isEqualTo(stockBefore);
+    }
+
+    @Test
+    void accumulatesGrainTypeCurrentStockAcrossMultipleCompletions() {
+        GrainType grainType = freshGrainType(2000.0);
+        double initialStock = grainType.getCurrentStock();
+
+        // Three completions on the same grain type with distinct trucks/plates and net weights.
+        // gross - tare: 12500-8500=4000, 15000-8500=6500, 20000-8500=11500 -> sum 22000
+        double[] grossWeights = {12500.0, 15000.0, 20000.0};
+        double expectedTotalNet = 0.0;
+        for (double gross : grossWeights) {
+            String plate = uniquePlate();
+            openTransaction(plate, 8500.0, grainType);
+            weighingPersistenceService.persist(StabilizationResult.of(SCALE_ID, plate, gross));
+            expectedTotalNet += gross - 8500.0;
+        }
+
+        GrainType reloaded = grainTypeRepository.findById(grainType.getId()).orElseThrow();
+        assertThat(reloaded.getCurrentStock()).isEqualTo(initialStock + expectedTotalNet);
+        assertThat(reloaded.getCurrentStock()).isEqualTo(2000.0 + 22000.0);
     }
 }
