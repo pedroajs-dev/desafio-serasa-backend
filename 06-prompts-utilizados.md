@@ -305,6 +305,54 @@ exatamente pelo netWeightKg de cada pesagem, margem cai de 0,1925 para 0,05 e o 
 sai do alerta de escassez assim que a margem fica abaixo de 0,18.]
 ```
 
+### Investigações de contrato de API (limpeza pós-MVP)
+
+Origem: teste manual via Swagger no fim da bateria de smoke-tests — notado que
+POST /api/trucks e POST /api/grain-types exibem/aceitam um `id` no corpo que o
+servidor descarta silenciosamente (PK auto-gerada). Investigação-só, sem fix.
+
+**Prompt de investigação (contrato de API — id silenciosamente ignorado):**
+```
+Investigation only — do not fix anything yet, just report findings so we can decide.
+
+Manual testing via Swagger found that POST /api/trucks and POST /api/grain-types both accept an "id" field in the request body (visible in the Swagger example payload, e.g. a huge placeholder number like 9007199254740991), but the server silently ignores it and auto-generates the real id (confirmed via H2: the grain type created via Swagger got id=4, not the huge number sent in the payload). This isn't a functional bug — the id-spoofing protection (from Epic 1) already nulls out any client-supplied id before persisting — but it's a request-schema smell: the DTO accepts and displays a field that has zero effect, which is confusing for any real API consumer and isn't something the original challenge spec asked for (the challenge only specifies a JSON shape for the scale-reading endpoint, {id, plate, weight} — it never specifies request shapes for the cadastro creation endpoints, so this was purely an implementation choice, not a requirement).
+
+Investigate and report back (do not change any code yet):
+
+1. Check every creation endpoint's request DTO: POST /api/trucks, POST /api/branches, POST /api/grain-types, POST /api/scales, POST /api/transactions. For each, report whether the request DTO includes an "id" field that gets silently discarded server-side (auto-generated id), or whether "id" is a legitimate client-supplied natural key (e.g. Scale.id appears to be a String like "BAL-001", intentionally supplied by the client as a natural identifier — confirm whether this is true and intentional, since it would NOT be part of this smell).
+2. For each affected endpoint, report exactly what happens today if a client supplies "id": is it fully ignored (auto-generated PK wins), does it ever leak into any response, and is there any test today that would break if the field were removed from the request DTO.
+3. Report what changing this would involve for each affected DTO: removing "id" from the create-request schema (separate request DTO without id, vs. the entity/response DTO which naturally has it), updating the Swagger/OpenAPI-generated docs (automatic once the DTO changes, since springdoc generates from the DTO), and which existing tests (if any) currently send an "id" in the creation payload and would need adjusting.
+4. Give a recommendation: is this worth fixing given how close the deadline is, or is it purely cosmetic/deferred-work material? Note any risk you see in touching request DTOs this late (e.g. shared DTOs used elsewhere, tests asserting on request shape).
+
+After completing the investigation, append this exact prompt (verbatim, the instructions above) to 06-prompts-utilizados.md, under a suitable section (e.g. alongside the other "Correções de regra de negócio (pós-MVP)" entries, or a new small subsection for API-contract cleanup investigations), with a short one-line context note explaining it originated from manual Swagger testing near the end of the smoke-test battery. Follow the existing bold-label + fenced-code-block pattern already used in that file.
+
+Do not modify any other file. This is investigation + documentation only.
+```
+
+Follow-up à investigação do `id`: verificar se `currentStock` ser settável na
+criação de grain-type é risco real ou apenas o mesmo padrão de cadastro dos
+outros campos (`purchasePricePerTon`, `maxReferenceStock`). Investigação-só, sem fix.
+
+**Prompt de investigação (contrato de API — currentStock settável na criação):**
+```
+Investigation only — do not fix anything yet, just report findings and a recommendation so we can decide.
+
+A previous investigation (silently-ignored id in creation DTOs) flagged, as an adjacent observation, that GrainType.currentStock is client-settable via POST /api/grain-types and is not nulled/reset by GrainTypeService, unlike the id field. The concern raised was that "a caller could seed arbitrary starting stock."
+
+Before treating this as a problem worth fixing, sanity-check it against the rest of the GrainType schema: purchasePricePerTon and maxReferenceStock are ALSO fully client-settable at creation, with no restriction, and nobody has flagged those as an issue — that's just normal cadastro data entry (an operator registering a new grain type provides its price, its reference stock ceiling, and presumably its starting stock, the same way they'd provide a truck's tare or a branch's location). There is no PATCH/PUT endpoint for GrainType today, so creation time is the only point where currentStock can be set at all — there's no ongoing "drift" risk from repeated calls, only the one-time initial value.
+
+Investigate and report back (do not change any code yet):
+
+1. Confirm whether currentStock being settable at creation is actually functionally different in risk from purchasePricePerTon/maxReferenceStock being settable at creation, or whether this is the same category of normal cadastro input with no real distinction — give your honest assessment, don't assume a fix is warranted just because it was flagged.
+2. Check whether the new duplicate-name validation (GrainTypeService, added earlier today) prevents someone from re-creating an existing grain type (e.g. "Milho") with a different currentStock to reset/inflate it — confirm that a 409 blocks that, meaning the only way to have an unusual currentStock is to create a genuinely NEW, distinctly-named grain type with that value, which is just normal data entry, not a way to tamper with an existing grain type's stock.
+3. Check whether currentStock is used anywhere else in a way that a large or small initial value could cause an actual problem beyond "the margin/scarcity math for that specific new grain type reflects whatever value was entered" (which is expected, since the operator IS the one entering it).
+4. Give a clear recommendation: is there a real gap here, or was this adjacent observation a false alarm / non-issue once cross-checked against how the other cadastro fields already work the same way? If there IS a genuine concern you find (e.g. some validation that should exist, like currentStock <= maxReferenceStock, or currentStock >= 0), report it specifically — but don't invent scope beyond what you actually find justified.
+
+After completing the investigation, append this exact prompt (verbatim) to 06-prompts-utilizados.md, in the same "Investigações de contrato de API (limpeza pós-MVP)" subsection created for the previous id investigation, following the existing bold-label + fenced-code-block pattern, with a one-line context note that it originated as a follow-up to that investigation.
+
+Do not modify any other file. This is investigation + documentation only — no code changes, even if you find something you think should change; just report it clearly so a decision can be made.
+```
+
 ---
 
 ## Padrão recorrente ao longo de todos os épicos

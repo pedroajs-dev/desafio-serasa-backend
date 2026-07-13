@@ -97,4 +97,25 @@ class GrainTypeControllerTest {
                 .andExpect(jsonPath("$.id").value(org.hamcrest.Matchers.not(1)))
                 .andExpect(jsonPath("$.name").value("Trigo"));
     }
+
+    @Test
+    void rejectsNullCurrentStock() throws Exception {
+        String payload = "{\"name\":\"Aveia\",\"purchasePricePerTon\":180.00,"
+                + "\"maxReferenceStock\":10000.0,\"currentStock\":null}";
+
+        mockMvc.perform(post("/api/grain-types")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(payload))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void rejectsNegativeCurrentStock() throws Exception {
+        GrainType grainType = new GrainType("Sorgo", new BigDecimal("140.00"), 10000.0, -1.0);
+
+        mockMvc.perform(post("/api/grain-types")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(grainType)))
+                .andExpect(status().isBadRequest());
+    }
 }
