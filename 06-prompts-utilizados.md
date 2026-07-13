@@ -233,6 +233,80 @@ rather than accidentally serializing the test itself. Run the full suite after.
 
 ---
 
+## Correções de regra de negócio (pós-MVP)
+
+**Incremento de estoque na doca ao completar pesagem (`currentStock` dinâmico):**
+```
+Business logic gap found re-reading the original challenge spec closely: "A margem
+de lucro é inversamente proporcional à quantidade disponível de cada tipo de grão na
+doca" (margin is inversely proportional to the available quantity of each grain type
+AT THE DOCK). The scenario explicitly says trucks return to the branch, go to the
+dock, and get weighed there — meaning a completed weighing represents real grain
+arriving at the dock. Currently GrainType.currentStock is a static field, never
+updated by WeighingPersistenceService.persist() — so the margin formula uses a number
+that never reflects real deliveries, missing the dynamic implied by "quantidade
+disponível na doca".
+
+Fix: when a transaction completes with a real weighing (inside
+WeighingPersistenceService.persist(), the same place that already sets
+grossWeightKg/netWeightKg/loadCost/status/endDate), also increment the associated
+GrainType's currentStock by the netWeightKg of that weighing (converted to the same
+unit currentStock is stored in — check application.yml/data.sql, currentStock appears
+to be in kg already, matching netWeightKg's unit, so likely a direct addition, but
+verify the units match before assuming).
+
+Requirements:
+1. Add the increment logic to WeighingPersistenceService.persist(), in the same
+   transactional method that already persists the WeighingRecord and updates the
+   TransportTransaction — must be atomic with the rest of that persist operation (same
+   @Transactional boundary), not a separate step that could get out of sync.
+2. Do NOT increment stock for transactions that get CANCELLED or any non-COMPLETED
+   path — only on the real completion path that already runs inside persist().
+3. Do NOT modify anything related to the anomaly-detection WARN logic, the rounding
+   logic, or any of the existing early-return guards (no scale found, no transaction
+   found, null tare, null price, non-positive net weight) — this is additive, inserted
+   alongside the existing persist logic, not a replacement of any existing behavior.
+4. Add regression tests in WeighingPersistenceServiceTest: completing a weighing
+   increases the grain type's currentStock by exactly netWeightKg; a CANCELLED or
+   non-persisted path does not change currentStock; run multiple completions for the
+   same grain type and confirm currentStock accumulates correctly (not overwritten).
+5. Consider (and explicitly report your decision on) whether this could affect the
+   Milho scarcity-alert demo scenario over time — since seed_demo_data.py and demo.py
+   run several Milho weighings, currentStock will grow across a long demo session,
+   meaning margin could eventually drop and the scarcity alert could disappear. This is
+   actually a GOOD demonstration of realistic business behavior (matches what the user
+   originally wanted to observe), not a bug — just make sure existing tests that assert
+   a fixed margin/scarcity value for Milho (e.g. the 19.25% example in the README, or
+   any test asserting scarcity-alerts contains Milho at boot) are based on the
+   FRESH-BOOT state (before any weighings run), not broken by accumulated stock from a
+   long-running demo session. Verify this doesn't break any existing test given tests
+   run against a fresh H2 instance per test class.
+6. Run the full test suite (./mvnw test) and confirm everything passes.
+7. Manually verify live: note the Milho currentStock (2000kg) and margin (19.25%) at
+   fresh boot, run a few real Milho weighings via the demo scripts or manually, confirm
+   currentStock increases by the net weight of each, and confirm the margin recalculates
+   lower as stock grows (and that the scarcity alert can disappear once margin drops
+   below the 0.18 threshold, if enough stock accumulates).
+8. Update the README: add a short, factual note near "Cálculo de margem e custo"
+   explaining that currentStock now increases automatically as real weighings complete
+   (grain physically arriving at the dock), reflecting the "quantidade disponível na
+   doca" language in the original spec, and that this is why the scarcity alert is
+   dynamic over the life of a running instance rather than a fixed demo fact. Keep the
+   existing Milho example accurate — note that its 19.25%/2000kg figures describe the
+   fresh-boot state, and will change as weighings for Milho are processed.
+
+This is a real business-logic correction, not cosmetic — treat with the same rigor as
+the CANCELLED-status fix (full test coverage, live verification, clear README
+documentation).
+[decisão sobre o req. 5: comportamento intencional e desejável — nenhum teste fixa
+19,25%/Milho-no-boot, então a acumulação não quebra a suíte; apenas o README precisou
+da ressalva de "estado de boot inicial". Verificação ao vivo confirmou: estoque sobe
+exatamente pelo netWeightKg de cada pesagem, margem cai de 0,1925 para 0,05 e o Milho
+sai do alerta de escassez assim que a margem fica abaixo de 0,18.]
+```
+
+---
+
 ## Padrão recorrente ao longo de todos os épicos
 
 Ciclo repetido em praticamente toda story:
