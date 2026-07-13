@@ -18,10 +18,13 @@ Solução para o desafio técnico backend: ingestão, estabilização e armazena
 - [Uso de IA](#uso-de-ia)
 - [Disciplina de processo](#disciplina-de-processo)
 - [Sugestões de expansão (não implementadas)](#sugestões-de-expansão-não-implementadas)
+- [Documentos de referência](#documentos-de-referência)
 
 ## Como rodar
 
 Pré-requisito: Java 21. Nenhum outro setup externo é necessário (sem Docker, sem containers).
+
+Para os scripts de demonstração opcionais (`seed_demo_data.py`, `demo.py`, etc.), Python 3.x é necessário, além da lib `requests` (`pip install requests`) — mas isso é só para a demonstração guiada, não para rodar a aplicação em si.
 
 Para uma demonstração guiada com dados variados e um dashboard visual:
 
@@ -210,3 +213,12 @@ chmod +x .git/hooks/pre-commit
 - Migrar o formato de erro para RFC 9457 (Problem Details): hoje usa um `ErrorResponse` customizado via `GlobalExceptionHandler`, funcional e testado, mas o padrão RFC 9457 (suportado nativamente pelo Spring Boot 3 via `ProblemDetail`) é o padrão de mercado para corpos de erro HTTP.
 - Estratégia de logging estruturada: padronizar nível de log por tipo de evento (`INFO` para pesagem estabilizada/transação fechada, `WARN` para skips conhecidos, `ERROR` para falhas reais), correlacionar `scaleId`/`plate` via MDC por requisição, e adotar formato JSON para facilitar agregação em ferramentas de observabilidade.
 - Métricas de negócio customizadas via `MeterRegistry` (além das métricas de infraestrutura já expostas — ver seção "Observabilidade" acima): leituras descartadas por idempotência, tempo médio até estabilização por balança, taxa de skip gracioso por tipo.
+
+## Documentos de referência
+
+Antes da implementação, o desafio foi analisado e planejado em documentos próprios, versionados na raiz do repositório:
+
+- [`01-desafio-original.md`](01-desafio-original.md) — enunciado original do desafio.
+- [`02-solucao-proposta.md`](02-solucao-proposta.md) — solução proposta e raciocínio de design antes de qualquer código ser escrito.
+- [`03-plano-execucao-sem-docker.md`](03-plano-execucao-sem-docker.md) — plano de execução adaptado à restrição de ambiente sem Docker/WSL.
+- [`06-prompts-utilizados.md`](06-prompts-utilizados.md) — prompts mais significativos usados com o Claude Code, por épico (referenciado em detalhe na seção "Uso de IA" abaixo).
