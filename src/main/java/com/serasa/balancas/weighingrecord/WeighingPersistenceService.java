@@ -40,7 +40,7 @@ public class WeighingPersistenceService implements WeighingPersistencePort {
     @Transactional
     public void persist(StabilizationResult result) {
         TransportTransaction transaction = transportTransactionRepository
-                .findByTruck_LicensePlateAndStatusNot(result.plate(), TransactionStatus.COMPLETED);
+                .findByTruck_LicensePlateAndStatusNotIn(result.plate(), TransactionStatus.TERMINAL);
 
         if (transaction == null) {
             log.warn("No open transaction found for plate={} (scaleId={}) — dropping stabilized reading of {}kg",

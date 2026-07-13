@@ -8,6 +8,7 @@ Solução para o desafio técnico backend: ingestão, estabilização e armazena
 - [Endpoints](#endpoints)
 - [Estratégia de estabilização](#estratégia-de-estabilização)
 - [Cálculo de margem e custo](#cálculo-de-margem-e-custo)
+- [Status terminal de transação: CANCELLED vs. COMPLETED](#status-terminal-de-transação-cancelled-vs-completed)
 - [Detecção de anomalia de peso](#detecção-de-anomalia-de-peso)
 - [Nota de arquitetura: Kafka (desenho) vs. processamento síncrono (entrega)](#nota-de-arquitetura-kafka-desenho-vs-processamento-síncrono-entrega)
 - [Estratégia de branches, PRs e revisão](#estratégia-de-branches-prs-e-revisão)
@@ -58,7 +59,7 @@ A aplicação sobe em `http://localhost:8080`.
 | GET | `/api/scales` | Lista balanças |
 | POST | `/api/transactions` | Abre uma transação de transporte (status `IN_TRANSIT`); rejeita se o caminhão já tiver uma transação aberta |
 | GET | `/api/transactions/{id}` | Busca transação por id |
-| PATCH | `/api/transactions/{id}/status` | Atualiza manualmente o status da transação |
+| PATCH | `/api/transactions/{id}/status` | Atualiza manualmente o status da transação; permite `CANCELLED` (encerramento administrativo), mas rejeita `COMPLETED` manual — conclusão só via pesagem real (ver seção abaixo) |
 | POST | `/api/scales/readings` | Endpoint de ingestão — recebe as leituras do ESP32 (ver seção abaixo) |
 | GET | `/api/reports/cost-by-grain?from=&to=` | Custo total de compra por tipo de grão no período |
 | GET | `/api/reports/scale-ranking` | Ranking de balanças por volume de pesagens concluídas |
@@ -118,6 +119,16 @@ Exemplo com dados reais de `data.sql` (Milho): `purchasePricePerTon = 95.50`, `c
 
 Esse valor de estoque do Milho foi deliberadamente reduzido no seed (de um valor maior para 2000) para que a margem calculada já ultrapasse o limiar de escassez (`reports.scarcity-threshold: 0.18`, em `application.yml`) desde o boot da aplicação, sem precisar de nenhuma edição manual no banco — o endpoint `/api/reports/scarcity-alerts` já mostra o Milho como alerta ativo assim que a aplicação sobe.
 
+## Status terminal de transação: `CANCELLED` vs. `COMPLETED`
+
+Durante o smoke testing manual identificou-se que `PATCH /api/transactions/{id}/status` permitia setar qualquer status diretamente — inclusive `COMPLETED` — sem que nenhuma pesagem real tivesse ocorrido. Como `StabilizationService`/`WeighingPersistenceService.persist()` nunca rodavam nesse caminho, a transação ficava marcada como `COMPLETED` com `grossWeightKg`, `netWeightKg`, `loadCost` e `endDate` nulos, corrompendo silenciosamente todo relatório que filtra por `status = COMPLETED` (`cost-by-grain`, `avg-weighing-duration` e, indiretamente, `scale-ranking`), que assumem que uma transação concluída tem dados reais de pesagem.
+
+A necessidade legítima por trás desse PATCH manual é operacional: um caminhão cuja balança falha, ou que nunca estabiliza, ficaria preso em um status não-terminal para sempre — e a guarda de "uma transação aberta por caminhão" (`findByTruck_LicensePlateAndStatusNotIn`) impediria esse caminhão de abrir uma nova transação. O operador precisa encerrar administrativamente uma transação travada, mas isso não pode se disfarçar de uma pesagem `COMPLETED` real.
+
+Decisão: introduziu-se um status terminal distinto, `CANCELLED`, para transações encerradas administrativamente (balança com defeito, caminhão que não estabiliza), mantendo `COMPLETED` reservado exclusivamente para transações que passaram pelo fluxo de pesagem real (`WeighingPersistenceService.persist()`, único ponto que popula pesos/custo/`endDate` de forma consistente). O endpoint PATCH passou a: permitir a transição para `CANCELLED`; rejeitar (`400`, via `BusinessException`) a transição manual direta para `COMPLETED`; e tratar transações já terminais (`COMPLETED` ou `CANCELLED`) como imutáveis — reabrir uma transação terminal via PATCH também é rejeitado, para que um `CANCELLED` não possa ser revertido e voltar a bloquear o caminhão, nem um `COMPLETED` seja reaberto. Os estados intermediários (`IN_TRANSIT`, `AT_DOCK`, `WEIGHING`) continuam livremente ajustáveis via PATCH, por serem estados operacionais pré-conclusão. Tanto `COMPLETED` quanto `CANCELLED` contam como terminais (não-bloqueantes) na guarda de transação aberta — a fonte única dessa definição é a constante `TransactionStatus.TERMINAL`, usada tanto pela guarda quanto pela regra do PATCH para não divergirem.
+
+Por que importa: preserva a integridade de todo relatório que filtra por `status = COMPLETED` — o objetivo central do sistema (calcular custos, identificar oportunidades de margem) depende de `COMPLETED` significar de forma confiável "houve pesagem real". Um `CANCELLED` é automaticamente excluído desses relatórios sem nenhuma mudança no código de report, justamente porque eles já filtram explicitamente por `COMPLETED` — verificado com um teste de regressão dedicado (`ReportControllerTest.costByGrainExcludesCancelledTransactions`), não presumido.
+
 ## Detecção de anomalia de peso
 
 Em `WeighingPersistenceService.persist()`, após o `netWeightKg` ser calculado e validado como positivo, o `grossWeightKg` estabilizado é comparado a um teto de carga plausível para aquele caminhão: `tare × (1 + anomaly-detection.max-payload-multiplier)`. Com o valor padrão configurado em `application.yml` (`max-payload-multiplier: 3.0`), o teto é `tare × 4` — por exemplo, para um caminhão com tara de 8500kg, um peso bruto acima de 34000kg dispara o alerta.
@@ -175,6 +186,7 @@ Alguns exemplos reais e significativos de prompts que geraram decisões de arqui
 - **Correção da fórmula de negócio (custo vs. preço de venda), identificada antes da implementação**: o requisito original confundia "custo da carga" com um valor já incluindo margem, e não convertia a unidade de peso (kg) para tonelada antes de aplicar o preço de compra. O prompt corrigiu isso em duas regras separadas — `custoCarga = (pesoLiquidoKg / 1000) × precoCompraPorTonelada` (sem margem) e `precoVendaPorTonelada = precoCompraPorTonelada × (1 + margem)` (separado, sob demanda) — antes de qualquer linha de código ser escrita.
 - **Decisão de concorrência com `ConcurrentHashMap.compute()`**: definição explícita, antes de implementar a Story 3.1, de que a atualização do estado de cada balança deveria passar por `map.compute(scaleId, ...)` para garantir atomicidade por chave sem lock global — e, na sequência, a decisão de que a chamada de persistência (I/O de banco) não poderia rodar dentro do `compute()`, para não segurar o lock daquela balança durante o round-trip ao banco.
 - **Bug de precisão de ponto flutuante encontrado rodando a demo**: inspecionando o H2 Console após uma pesagem completa via simulador, `loadCost` apareceu persistido com precisão total (ex. `4229.841980016929`); o prompt determinou a correção — arredondar `grossWeightKg`, `netWeightKg` e `loadCost` para 2 casas decimais com `BigDecimal.setScale(2, RoundingMode.HALF_UP)` antes de persistir, e verificar se as agregações dos relatórios do Épico 5 também precisavam do mesmo tratamento.
+- **Status `CANCELLED` para encerramento administrativo, decisão surgida no smoke testing**: testando manualmente o endpoint `PATCH /api/transactions/{id}/status`, percebeu-se que ele permitia marcar uma transação como `COMPLETED` sem nenhuma pesagem real ter ocorrido, o que corromperia silenciosamente os relatórios que filtram por `status = COMPLETED`. O prompt determinou a correção — um status terminal `CANCELLED` distinto para transações encerradas administrativamente, mantendo `COMPLETED` exclusivo do fluxo de pesagem real e fazendo o PATCH rejeitar `COMPLETED` manual (ver seção ["Status terminal de transação"](#status-terminal-de-transação-cancelled-vs-completed)).
 
 Lista completa dos prompts mais significativos por épico em [`06-prompts-utilizados.md`](06-prompts-utilizados.md) — não é um transcript literal de cada troca; interações de rotina (aprovações simples, "sim", "continua") foram omitidas, conforme nota no início daquele arquivo.
 

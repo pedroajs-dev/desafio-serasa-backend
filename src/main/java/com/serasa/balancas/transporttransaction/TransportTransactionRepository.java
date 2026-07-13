@@ -2,6 +2,7 @@ package com.serasa.balancas.transporttransaction;
 
 import com.serasa.balancas.report.CostByGrainResponse;
 import java.time.LocalDateTime;
+import java.util.Collection;
 import java.util.List;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
@@ -9,7 +10,13 @@ import org.springframework.data.repository.query.Param;
 
 public interface TransportTransactionRepository extends JpaRepository<TransportTransaction, Long> {
 
-    TransportTransaction findByTruck_LicensePlateAndStatusNot(String licensePlate, TransactionStatus completedStatus);
+    /**
+     * Finds the truck's currently-open transaction, if any — i.e. one whose status is NOT terminal.
+     * Callers pass {@link TransactionStatus#TERMINAL} so both COMPLETED and CANCELLED count as closed
+     * (non-blocking). Relies on the business invariant of at most one open transaction per truck.
+     */
+    TransportTransaction findByTruck_LicensePlateAndStatusNotIn(String licensePlate,
+            Collection<TransactionStatus> statuses);
 
     @Query("SELECT new com.serasa.balancas.report.CostByGrainResponse(t.grainType.id, t.grainType.name, SUM(t.loadCost)) "
             + "FROM TransportTransaction t "

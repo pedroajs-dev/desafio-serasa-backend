@@ -1,5 +1,6 @@
 package com.serasa.balancas.transporttransaction;
 
+import static org.hamcrest.Matchers.containsString;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -30,6 +31,9 @@ class TransportTransactionControllerTest {
 
     @Autowired
     private TruckRepository truckRepository;
+
+    @Autowired
+    private TransportTransactionRepository transactionRepository;
 
     /**
      * Persists a fresh truck with a unique plate, so each test gets its own truck and
@@ -99,10 +103,13 @@ class TransportTransactionControllerTest {
         long truckId = createTruck();
         long firstId = createTransaction(truckId);
 
-        mockMvc.perform(patch("/api/transactions/" + firstId + "/status")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"status\":\"COMPLETED\"}"))
-                .andExpect(status().isOk());
+        // Completion can no longer be forced through the PATCH endpoint (it rejects manual COMPLETED),
+        // so drive the transaction to COMPLETED directly via the repository — the same bypass the real
+        // weighing flow (WeighingPersistenceService.persist()) performs — to assert a COMPLETED
+        // transaction frees the truck to open a new one.
+        TransportTransaction first = transactionRepository.findById(firstId).orElseThrow();
+        first.setStatus(TransactionStatus.COMPLETED);
+        transactionRepository.save(first);
 
         TransportTransactionRequest secondRequest = new TransportTransactionRequest(truckId, 1L, 1L);
 
@@ -110,6 +117,63 @@ class TransportTransactionControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(objectMapper.writeValueAsString(secondRequest)))
                 .andExpect(status().isCreated());
+    }
+
+    @Test
+    void allowsNewTransactionAfterPreviousOneCancelled() throws Exception {
+        long truckId = createTruck();
+        long firstId = createTransaction(truckId);
+
+        mockMvc.perform(patch("/api/transactions/" + firstId + "/status")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"status\":\"CANCELLED\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("CANCELLED"));
+
+        TransportTransactionRequest secondRequest = new TransportTransactionRequest(truckId, 1L, 1L);
+
+        mockMvc.perform(post("/api/transactions")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(secondRequest)))
+                .andExpect(status().isCreated());
+    }
+
+    @Test
+    void patchToCancelledSucceeds() throws Exception {
+        long id = createTransaction();
+
+        mockMvc.perform(patch("/api/transactions/" + id + "/status")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"status\":\"CANCELLED\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("CANCELLED"));
+    }
+
+    @Test
+    void patchToCompletedIsRejected() throws Exception {
+        long id = createTransaction();
+
+        mockMvc.perform(patch("/api/transactions/" + id + "/status")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"status\":\"COMPLETED\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message", containsString("cannot be manually marked as COMPLETED")));
+    }
+
+    @Test
+    void patchOnTerminalTransactionIsRejected() throws Exception {
+        long id = createTransaction();
+
+        mockMvc.perform(patch("/api/transactions/" + id + "/status")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"status\":\"CANCELLED\"}"))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(patch("/api/transactions/" + id + "/status")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"status\":\"IN_TRANSIT\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.message", containsString("already closed")));
     }
 
     @Test
