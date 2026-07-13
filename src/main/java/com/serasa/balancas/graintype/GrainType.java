@@ -8,6 +8,7 @@ import jakarta.persistence.Id;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.PositiveOrZero;
 import java.math.BigDecimal;
 
 @Entity
@@ -28,6 +29,8 @@ public class GrainType {
     @NotNull
     private Double maxReferenceStock;
 
+    @NotNull
+    @PositiveOrZero
     private Double currentStock = 0.0;
 
     public GrainType() {
