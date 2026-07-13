@@ -48,7 +48,8 @@ public class TransportTransactionController {
         Branch branch = branchRepository.findById(request.branchId())
                 .orElseThrow(() -> new ResourceNotFoundException("Branch not found with id " + request.branchId()));
 
-        if (transactionRepository.findByTruck_LicensePlateAndStatusNot(truck.getLicensePlate(), TransactionStatus.COMPLETED) != null) {
+        if (transactionRepository.findByTruck_LicensePlateAndStatusNotIn(
+                truck.getLicensePlate(), TransactionStatus.TERMINAL) != null) {
             throw new BusinessException("Truck " + truck.getLicensePlate() + " already has an open transaction");
         }
 
@@ -69,6 +70,21 @@ public class TransportTransactionController {
     public TransportTransactionResponse updateStatus(@PathVariable Long id, @Valid @RequestBody StatusUpdateRequest request) {
         TransportTransaction transaction = transactionRepository.findById(id)
                 .orElseThrow(() -> new ResourceNotFoundException("TransportTransaction not found with id " + id));
+
+        // Manual status transition rules:
+        // - Intermediate operational states (IN_TRANSIT, AT_DOCK, WEIGHING) and CANCELLED are freely settable.
+        // - A transaction already in a terminal state (COMPLETED or CANCELLED) is immutable: reopening it would
+        //   re-block the truck and, for COMPLETED, corrupt the reports that assume real weighing data exists.
+        // - COMPLETED can never be set here: completion only happens through the real weighing flow
+        //   (WeighingPersistenceService.persist()), which also populates weights/cost/endDate.
+        if (TransactionStatus.TERMINAL.contains(transaction.getStatus())) {
+            throw new BusinessException("Transaction is already closed (" + transaction.getStatus()
+                    + ") and cannot change status");
+        }
+        if (request.status() == TransactionStatus.COMPLETED) {
+            throw new BusinessException("Transaction cannot be manually marked as COMPLETED"
+                    + " — completion only happens via a real weighing");
+        }
 
         transaction.setStatus(request.status());
         TransportTransaction saved = transactionRepository.save(transaction);

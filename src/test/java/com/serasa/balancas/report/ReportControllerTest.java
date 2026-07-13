@@ -170,6 +170,32 @@ class ReportControllerTest {
         assertThat(total).isEqualTo(750.0);
     }
 
+    @Test
+    void costByGrainExcludesCancelledTransactions() throws Exception {
+        Branch branch = createBranch();
+        GrainType grainType = createGrainType();
+        Truck truck = createTruck();
+
+        // A CANCELLED transaction is administratively closed and never went through a real weighing;
+        // even if it carried a loadCost value it must not pollute the cost report (which assumes
+        // COMPLETED means real weighing data).
+        TransportTransaction cancelled = new TransportTransaction(truck, grainType, branch);
+        cancelled.setStatus(TransactionStatus.CANCELLED);
+        cancelled.setLoadCost(9999.0);
+        transportTransactionRepository.save(cancelled);
+
+        createCompletedTransaction(truck, grainType, branch, 750.0, LocalDateTime.now(), LocalDateTime.now());
+
+        String response = mockMvc.perform(get("/api/reports/cost-by-grain"))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+
+        JsonNode json = objectMapper.readTree(response);
+        Double total = findTotalLoadCostFor(json, grainType.getId());
+
+        assertThat(total).isEqualTo(750.0);
+    }
+
     private Double findTotalLoadCostFor(JsonNode json, Long grainTypeId) {
         for (JsonNode node : json) {
             if (node.get("grainTypeId").asLong() == grainTypeId) {
